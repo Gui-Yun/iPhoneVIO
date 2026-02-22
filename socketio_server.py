@@ -8,17 +8,20 @@ import base64
 import struct
 import numpy as np
 class DataPacket:
-    def __init__(self, transform_matrix: np.ndarray, timestamp):
+    def __init__(self, transform_matrix: np.ndarray, timestamp, wall_clock=0.0):
         self.transform_matrix = transform_matrix.copy()
         self.timestamp = timestamp
+        self.wall_clock = wall_clock
 
     def __str__(self):
-        return f"Translation: {self.transform_matrix[:3, 3]}, Timestamp: {self.timestamp:.3f}"
+        return (f"Translation: {self.transform_matrix[:3, 3]}, "
+                f"Timestamp: {self.timestamp:.3f}, "
+                f"WallClock: {self.wall_clock:.3f}")
 
 def decode_data(encoded_str):
     # Decode the base64 string to bytes
     data_bytes = base64.b64decode(encoded_str)
-    
+
     transform_matrix = np.zeros((4, 4))
     # Unpack transform matrix (16 floats)
     for i in range(4):
@@ -26,11 +29,14 @@ def decode_data(encoded_str):
             transform_matrix[i, j] = struct.unpack('f', data_bytes[4 * (4 * i + j):4 * (4 * i + j + 1)])[0]
     # The transform matrix is stored in column-major order in swift, so we need to transpose it in python
     transform_matrix = transform_matrix.T
-    
+
     # Unpack timestamp (1 double)
     timestamp = struct.unpack('d', data_bytes[64:72])[0]
-    
-    return DataPacket(transform_matrix, timestamp)
+
+    # Unpack wall clock (1 double, UTC epoch seconds)
+    wall_clock = struct.unpack('d', data_bytes[72:80])[0]
+
+    return DataPacket(transform_matrix, timestamp, wall_clock)
 
 
 # Create a Socket.IO server
