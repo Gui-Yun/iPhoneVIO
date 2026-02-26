@@ -1,8 +1,8 @@
 import SwiftUI
+import Network
 
 enum ARAction {
-    case update(ip: String, port: Int)
-    case resetOrigin
-    case connect
+    case connectToEndpoint(NWEndpoint)
     case disconnect
+    case resetOrigin
 }

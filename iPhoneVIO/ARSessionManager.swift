@@ -19,9 +19,6 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
 
     var arView: ARView!
     let networkClient = NetworkClient()
-    var hostIP: String = "10.90.0.133"
-
-    var hostPort: Int = 5555
     var prevTimestamp: Double = 0.0
 
     private let jpegQueue = DispatchQueue(label: "com.iphoneVIO.jpeg", qos: .userInitiated)
@@ -55,8 +52,12 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     func setupARSession() {
         hasSentMetadata = false
         sessionId = UUID().uuidString
-        networkClient.connect(hostIP: hostIP, hostPort: hostPort)
-        self.publishPose = true
+
+        // Start Bonjour advertising + browsing instead of connecting immediately
+        let deviceModel = Self.deviceModelIdentifier()
+        BonjourManager.shared.startAll(sessionId: sessionId, deviceModel: deviceModel)
+
+        self.publishPose = false  // Wait for connection via discovered server or manual connect
         arView.session.delegate = self
         let configuration = ARWorldTrackingConfiguration()
         arView.session.run(configuration)
@@ -114,31 +115,24 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
             .actionStream
             .sink { [weak self] action in
                 switch action {
-                    case .update(let ip, let port):
-                        self?.publishPose = false
-                        self?.networkClient.disconnect()
-                        self?.hostIP = ip
-                        self?.hostPort = port
-                        self?.hasSentMetadata = false
-                        self?.sessionId = UUID().uuidString
-                        print("Reconnecting to \(ip):\(port)")
-                        self?.networkClient.connect(hostIP: ip, hostPort: port)
-                        self?.publishPose = true
                     case .resetOrigin:
                         self?.hasSentMetadata = false
                         self?.sessionId = UUID().uuidString
                         let configuration = ARWorldTrackingConfiguration()
                         self?.arView.session.run(configuration, options: .resetTracking)
                         self?.setupARGuides()
-                    case .connect:
-                        guard let self = self else { return }
-                        self.hasSentMetadata = false
-                        self.sessionId = UUID().uuidString
-                        self.networkClient.connect(hostIP: self.hostIP, hostPort: self.hostPort)
-                        self.publishPose = true
                     case .disconnect:
                         self?.publishPose = false
                         self?.networkClient.disconnect()
+                    case .connectToEndpoint(let endpoint):
+                        guard let self = self else { return }
+                        self.publishPose = false
+                        self.networkClient.disconnect()
+                        self.hasSentMetadata = false
+                        self.sessionId = UUID().uuidString
+                        print("Connecting to discovered endpoint: \(endpoint)")
+                        self.networkClient.connect(endpoint: endpoint)
+                        self.publishPose = true
                 }
             }
             .store(in: &cancellables)

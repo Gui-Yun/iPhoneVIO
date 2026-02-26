@@ -107,6 +107,47 @@ class NetworkClient {
         self.connection = conn
     }
 
+    func connect(endpoint: NWEndpoint) {
+        // Clean up existing connection
+        connection?.cancel()
+        connection = nil
+        isSending = false
+
+        onStatusChange?(.connecting)
+        print("Connecting to endpoint: \(endpoint)")
+
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
+        let params = NWParameters(tls: nil, tcp: tcpOptions)
+
+        let conn = NWConnection(to: endpoint, using: params)
+
+        conn.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                print("TCP connected to \(endpoint)")
+                self?.onStatusChange?(.connected)
+            case .failed(let error):
+                print("TCP connection failed: \(error)")
+                conn.cancel()
+                self?.connection = nil
+                self?.onStatusChange?(.disconnected)
+            case .cancelled:
+                self?.onStatusChange?(.disconnected)
+            case .waiting(let error):
+                print("TCP waiting: \(error), cancelling")
+                conn.cancel()
+                self?.connection = nil
+                self?.onStatusChange?(.disconnected)
+            default:
+                break
+            }
+        }
+
+        conn.start(queue: queue)
+        self.connection = conn
+    }
+
     func disconnect() {
         isSending = false
         connection?.cancel()
