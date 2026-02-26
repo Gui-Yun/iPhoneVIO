@@ -9,27 +9,53 @@ import XCTest
 @testable import iPhoneVIO
 
 final class iPhoneVIOTests: XCTestCase {
+    func testDeviceNodeStatusDecodesSnakeCaseFields() throws {
+        let json = """
+        [
+          {
+            "name": "cam front",
+            "bit_index": 2,
+            "online": true,
+            "process_running": false,
+            "pid": 4321,
+            "backend": "usb",
+            "address": "192.168.0.22"
+          }
+        ]
+        """
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        let devices = try JSONDecoder().decode([DeviceNodeStatus].self, from: Data(json.utf8))
+        XCTAssertEqual(devices.count, 1)
+        XCTAssertEqual(devices[0].name, "cam front")
+        XCTAssertEqual(devices[0].bitIndex, 2)
+        XCTAssertEqual(devices[0].online, true)
+        XCTAssertEqual(devices[0].processRunning, false)
+        XCTAssertEqual(devices[0].pid, 4321)
+        XCTAssertEqual(devices[0].backend, "usb")
+        XCTAssertEqual(devices[0].address, "192.168.0.22")
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+    func testDeviceNodeStatusOptionalFieldsCanBeMissing() throws {
+        let json = """
+        [
+          {
+            "name": "phone_a",
+            "bit_index": 0,
+            "online": false,
+            "process_running": false,
+            "backend": "ios"
+          }
+        ]
+        """
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
+        let devices = try JSONDecoder().decode([DeviceNodeStatus].self, from: Data(json.utf8))
+        XCTAssertEqual(devices.count, 1)
+        XCTAssertNil(devices[0].pid)
+        XCTAssertNil(devices[0].address)
     }
 
     func testPerformanceExample() throws {
-        // This is an example of a performance test case.
         self.measure {
-            // Put the code you want to measure the time of here.
         }
     }
 

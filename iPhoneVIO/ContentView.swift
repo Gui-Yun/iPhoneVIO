@@ -52,12 +52,26 @@ struct ContentView : View {
                 .cornerRadius(8)
                 .padding(.top, 50)
             }
-            // Orientation cube (top-right)
+            // Orientation cube + reset origin (top-right)
             .overlay(alignment: .topTrailing) {
-                OrientationCubeView(cameraTransform: viewController.cameraTransform)
-                    .frame(width: 120, height: 120)
-                    .padding(.top, 90)
-                    .padding(.trailing, 8)
+                VStack(spacing: 8) {
+                    OrientationCubeView(cameraTransform: viewController.cameraTransform)
+                        .frame(width: 120, height: 120)
+
+                    Button {
+                        ARManager.shared.actionStream.send(.resetOrigin)
+                    } label: {
+                        Image(systemName: "scope")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 90)
+                .padding(.trailing, 8)
             }
             // mDNS status panel (top-left)
             .overlay(alignment: .topLeading) {
@@ -128,6 +142,8 @@ struct MDNSStatusPanel: View {
     @ObservedObject var bonjourManager: BonjourManager
     @ObservedObject var recordingController: RecordingController
     let connectionStatus: ConnectionStatus
+    @State private var isPanelExpanded = false
+    @State private var showDeviceControls = false
 
     var readyStatusText: String {
         if bonjourManager.rapidDriverURL == nil {
@@ -166,8 +182,61 @@ struct MDNSStatusPanel: View {
         bonjourManager.rapidDriverURL != nil ? .green : .gray
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+    var controlAvailable: Bool {
+        bonjourManager.rapidDriverURL != nil
+    }
+
+    // Collapsed pill: 4 colored dots
+    private var collapsedPill: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isPanelExpanded = true
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(bonjourManager.isAdvertising ? Color.green : Color.gray)
+                    .frame(width: 8, height: 8)
+                Circle()
+                    .fill(dataStatusColor)
+                    .frame(width: 8, height: 8)
+                Circle()
+                    .fill(controlStatusColor)
+                    .frame(width: 8, height: 8)
+                Circle()
+                    .fill(readyStatusColor)
+                    .frame(width: 8, height: 8)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.6))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Expanded panel: full status + device controls
+    private var expandedPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Header with collapse button
+            HStack {
+                Text("状态")
+                    .font(.system(size: 11, weight: .bold).monospaced())
+                    .foregroundColor(.white.opacity(0.85))
+                Spacer(minLength: 4)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isPanelExpanded = false
+                    }
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(4)
+                }
+                .buttonStyle(.plain)
+            }
+
             StatusRow(
                 label: "广播",
                 status: bonjourManager.isAdvertising ? "✓" : "…",
@@ -188,10 +257,79 @@ struct MDNSStatusPanel: View {
                 status: readyStatusText,
                 color: readyStatusColor
             )
+
+            Divider()
+                .overlay(Color.white.opacity(0.15))
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDeviceControls.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("设备")
+                        .font(.system(size: 11, weight: .medium).monospaced())
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer(minLength: 4)
+                    Text(showDeviceControls ? "收起" : "展开")
+                        .font(.system(size: 11).monospaced())
+                        .foregroundColor(.white.opacity(0.85))
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showDeviceControls {
+                deviceControlsView
+            }
         }
         .padding(10)
         .background(Color.black.opacity(0.6))
         .cornerRadius(8)
+    }
+
+    var body: some View {
+        if isPanelExpanded {
+            expandedPanel
+        } else {
+            collapsedPill
+        }
+    }
+
+    @ViewBuilder
+    private var deviceControlsView: some View {
+        if !controlAvailable {
+            Text("控制服务未连接")
+                .font(.system(size: 11).monospaced())
+                .foregroundColor(.white.opacity(0.75))
+        } else if recordingController.devicesFetchFailed && recordingController.deviceNodes.isEmpty {
+            Text("设备状态获取失败")
+                .font(.system(size: 11).monospaced())
+                .foregroundColor(.yellow)
+        } else if recordingController.deviceNodes.isEmpty {
+            Text("未发现设备节点")
+                .font(.system(size: 11).monospaced())
+                .foregroundColor(.white.opacity(0.75))
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                if recordingController.devicesFetchFailed {
+                    Text("设备状态更新失败")
+                        .font(.system(size: 10).monospaced())
+                        .foregroundColor(.yellow)
+                }
+                ForEach(recordingController.deviceNodes) { device in
+                    DeviceControlRow(
+                        device: device,
+                        isControlAvailable: controlAvailable,
+                        isRecording: recordingController.isRecording,
+                        isRestarting: recordingController.isRestarting.contains(device.name)
+                    ) {
+                        Task {
+                            await recordingController.restartDevice(device.name)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -212,6 +350,55 @@ struct StatusRow: View {
             Text(status)
                 .font(.system(size: 11).monospaced())
                 .foregroundColor(.white)
+        }
+    }
+}
+
+struct DeviceControlRow: View {
+    let device: DeviceNodeStatus
+    let isControlAvailable: Bool
+    let isRecording: Bool
+    let isRestarting: Bool
+    let onRestart: () -> Void
+
+    var statusColor: Color {
+        if device.isReachable && device.processRunning { return .green }
+        if device.isReachable { return .yellow }
+        return .gray
+    }
+
+    var restartTitle: String {
+        if isRestarting { return "重启中" }
+        if isRecording { return "录制中" }
+        return "重启"
+    }
+
+    var buttonDisabled: Bool {
+        !isControlAvailable || isRestarting
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 6, height: 6)
+            Text(device.name)
+                .font(.system(size: 11).monospaced())
+                .foregroundColor(.white)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Button(action: onRestart) {
+                Text(restartTitle)
+                    .font(.system(size: 10, weight: .medium).monospaced())
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.16))
+                    .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+            .disabled(buttonDisabled)
+            .opacity((buttonDisabled || isRecording) ? 0.55 : 1.0)
         }
     }
 }
@@ -301,6 +488,8 @@ struct ARViewContainer: UIViewControllerRepresentable {
 }
 
 
-#Preview {
-    ContentView()
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
