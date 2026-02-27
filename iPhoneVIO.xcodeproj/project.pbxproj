@@ -27,6 +27,13 @@
 		C60F156BCCAB30F337E416B0 /* Pods_iPhoneVIOTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FCBD9B0D87942E8D561A1779 /* Pods_iPhoneVIOTests.framework */; };
 		CD4B63BF511C1AEA5309CA7A /* Pods_iPhoneVIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E023A5510CA7D9CA21F72D86 /* Pods_iPhoneVIO.framework */; };
 		E02FDF37472DB0A2C1B8AAA4 /* Pods_iPhoneVIO_iPhoneVIOUITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 648FEE11F75FCDFE352BFC75 /* Pods_iPhoneVIO_iPhoneVIOUITests.framework */; };
+		F1B0CB6491B188E154D4771A /* RobotModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759CDEFA7D12F0D696258603 /* RobotModel.swift */; };
+		0FBE1CB9EE6AAFADE7136557 /* URDFParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F56C0E666003D1DA3D77EF /* URDFParser.swift */; };
+		EE7C4B3319F7E2791EE9D3EF /* IKSolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F5B20785166C9DA027ECB6 /* IKSolver.swift */; };
+		A00DDADDAC75BB46B8BF547D /* RobotRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */; };
+		8F187EB51CF2B34D2CAC0695 /* FeasibilityChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */; };
+		A7E7AEADA62E99660BE7A116 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */; };
+		BB07B84B316BB9667BCC370F /* RM75 in Resources */ = {isa = PBXBuildFile; fileRef = C8965478D5912ACA61B0ED44 /* RM75 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +84,13 @@
 		BE3FBEE8296BDA811BF1F5D3 /* Pods-iPhoneVIO-iPhoneVIOUITests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-iPhoneVIO-iPhoneVIOUITests.debug.xcconfig"; path = "Target Support Files/Pods-iPhoneVIO-iPhoneVIOUITests/Pods-iPhoneVIO-iPhoneVIOUITests.debug.xcconfig"; sourceTree = "<group>"; };
 		E023A5510CA7D9CA21F72D86 /* Pods_iPhoneVIO.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_iPhoneVIO.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		FCBD9B0D87942E8D561A1779 /* Pods_iPhoneVIOTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_iPhoneVIOTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		759CDEFA7D12F0D696258603 /* RobotModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobotModel.swift; sourceTree = "<group>"; };
+		20F56C0E666003D1DA3D77EF /* URDFParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URDFParser.swift; sourceTree = "<group>"; };
+		89F5B20785166C9DA027ECB6 /* IKSolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IKSolver.swift; sourceTree = "<group>"; };
+		77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobotRenderer.swift; sourceTree = "<group>"; };
+		F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeasibilityChecker.swift; sourceTree = "<group>"; };
+		C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
+		C8965478D5912ACA61B0ED44 /* RM75 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RM75; path = Resources/RM75; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,6 +159,13 @@
 				EE0005012FE89BE400DD0DFA /* DataManagementController.swift */,
 				FF0006012FE89BE400DD0DFA /* DataManagementView.swift */,
 				AA0001012BE89BE400DD0DFA /* OrientationCubeView.swift */,
+				759CDEFA7D12F0D696258603 /* RobotModel.swift */,
+				20F56C0E666003D1DA3D77EF /* URDFParser.swift */,
+				89F5B20785166C9DA027ECB6 /* IKSolver.swift */,
+				77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */,
+				F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */,
+				C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */,
+				C8965478D5912ACA61B0ED44 /* RM75 */,
 				1F6E8FBD2BE89BAD00DD0DFA /* Assets.xcassets */,
 				1F6E8FBF2BE89BAD00DD0DFA /* Preview Content */,
 			);
@@ -308,6 +329,7 @@
 			files = (
 				1F6E8FC12BE89BAD00DD0DFA /* Preview Assets.xcassets in Resources */,
 				1F6E8FBE2BE89BAD00DD0DFA /* Assets.xcassets in Resources */,
+				BB07B84B316BB9667BCC370F /* RM75 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -413,6 +435,12 @@
 				DD0004022FE89BE400DD0DFA /* RecordingItem.swift in Sources */,
 				EE0005022FE89BE400DD0DFA /* DataManagementController.swift in Sources */,
 				FF0006022FE89BE400DD0DFA /* DataManagementView.swift in Sources */,
+				F1B0CB6491B188E154D4771A /* RobotModel.swift in Sources */,
+				0FBE1CB9EE6AAFADE7136557 /* URDFParser.swift in Sources */,
+				EE7C4B3319F7E2791EE9D3EF /* IKSolver.swift in Sources */,
+				A00DDADDAC75BB46B8BF547D /* RobotRenderer.swift in Sources */,
+				8F187EB51CF2B34D2CAC0695 /* FeasibilityChecker.swift in Sources */,
+				A7E7AEADA62E99660BE7A116 /* HapticManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

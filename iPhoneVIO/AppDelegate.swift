@@ -8,6 +8,12 @@
 import UIKit
 import SwiftUI
 
+final class LandscapeHostingController<Content: View>: UIHostingController<Content> {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
+    override var shouldAutorotate: Bool { false }
+}
+
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
@@ -24,7 +30,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         // Use a UIHostingController as window root view controller.
         let window = UIWindow(frame: UIScreen.main.bounds)
-        window.rootViewController = UIHostingController(rootView: contentView)
+        window.rootViewController = LandscapeHostingController(rootView: contentView)
         self.window = window
         window.makeKeyAndVisible()
         return true
@@ -51,4 +57,3 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         BonjourManager.shared.stopAll()
     }
 }
-

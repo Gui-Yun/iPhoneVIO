@@ -98,6 +98,12 @@ struct ContentView : View {
                 .padding(.top, 90)
                 .padding(.leading, 8)
             }
+            // FeasibleCap control panel (bottom-leading)
+            .overlay(alignment: .bottomLeading) {
+                FeasibleCapControlPanel(viewController: viewController)
+                    .padding(.leading, 8)
+                    .padding(.bottom, 40)
+            }
             // Recording button (bottom-center)
             .overlay(alignment: .bottom) {
                 RecordingButton(
@@ -491,6 +497,87 @@ struct RecordingButton: View {
     }
 }
 
+
+// MARK: - FeasibleCap Control Panel
+
+struct FeasibleCapControlPanel: View {
+    @ObservedObject var viewController: ViewController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Feasibility indicator
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(viewController.isFeasible ? Color.green : Color.red)
+                    .frame(width: 10, height: 10)
+                Text(viewController.isFeasible ? "可行" : "不可行")
+                    .font(.system(size: 11, weight: .medium).monospaced())
+                    .foregroundColor(.white)
+            }
+
+            // Place Base
+            Button {
+                ARManager.shared.actionStream.send(.startBasePlacement)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "location.circle")
+                        .font(.system(size: 11))
+                    Text(viewController.robotBasePlaced ? "重置基座" : "放置基座")
+                        .font(.system(size: 11, weight: .medium).monospaced())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.16))
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+
+            // Clutch toggle
+            Button {
+                ARManager.shared.actionStream.send(.toggleClutch)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: viewController.isClutchEngaged ? "lock.fill" : "lock.open")
+                        .font(.system(size: 11))
+                    Text(viewController.isClutchEngaged ? "松开" : "锁定")
+                        .font(.system(size: 11, weight: .medium).monospaced())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(viewController.isClutchEngaged ? Color.green.opacity(0.4) : Color.white.opacity(0.16))
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewController.robotBasePlaced)
+            .opacity(viewController.robotBasePlaced ? 1.0 : 0.4)
+
+            // Reset
+            Button {
+                ARManager.shared.actionStream.send(.resetGhostArm)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 11))
+                    Text("重置")
+                        .font(.system(size: 11, weight: .medium).monospaced())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.16))
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewController.isGhostVisible)
+            .opacity(viewController.isGhostVisible ? 1.0 : 0.4)
+        }
+        .padding(10)
+        .background(Color.black.opacity(0.6))
+        .cornerRadius(8)
+    }
+}
 
 struct ARViewContainer: UIViewControllerRepresentable {
 
