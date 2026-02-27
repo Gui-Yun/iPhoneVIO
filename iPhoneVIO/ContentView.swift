@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import RealityKit
 import SceneKit
 
 struct ContentView : View {
@@ -28,6 +27,7 @@ struct ContentView : View {
     }
 
     var body: some View {
+        NavigationStack {
         ARViewContainer(viewController: self.viewController)
             .edgesIgnoringSafeArea(.all)
             // Top status bar
@@ -62,6 +62,21 @@ struct ContentView : View {
                         ARManager.shared.actionStream.send(.resetOrigin)
                     } label: {
                         Image(systemName: "scope")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink {
+                        DataManagementView(
+                            rapidDriverURL: bonjourManager.rapidDriverURL,
+                            isRecording: recordingController.isRecording
+                        )
+                    } label: {
+                        Image(systemName: "folder")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white)
                             .frame(width: 36, height: 36)
@@ -133,6 +148,8 @@ struct ContentView : View {
             .onChange(of: bonjourManager.rapidDriverURL) { _, url in
                 recordingController.updateBaseURL(url)
             }
+            .navigationBarHidden(true)
+        } // NavigationStack
     }
 }
 

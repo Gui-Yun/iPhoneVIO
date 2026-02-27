@@ -7,7 +7,7 @@
 
 import Foundation
 import ARKit
-import RealityKit
+import SceneKit
 import Combine
 
 class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
@@ -17,7 +17,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     @Published var trackingStatus: String = ""
     @Published var cameraTransform: simd_float4x4 = matrix_identity_float4x4
 
-    var arView: ARView!
+    var scnView: ARSCNView!
     let networkClient = NetworkClient()
     var prevTimestamp: Double = 0.0
 
@@ -28,17 +28,17 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     private var jpegQuality: CGFloat = 0.7
 
     // AR guides
-    private var originAnchor: AnchorEntity?
+    private var originNode: SCNNode?
     private var normalFrameCount: Int = 0
     private let normalFrameThreshold: Int = 10
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        arView = ARView(frame: view.bounds)
-        arView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        arView.debugOptions.insert(.showFeaturePoints)
-        view.addSubview(arView)
+        scnView = ARSCNView(frame: view.bounds)
+        scnView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scnView.debugOptions.insert(.showFeaturePoints)
+        view.addSubview(scnView)
 
         networkClient.onStatusChange = { [weak self] status in
             DispatchQueue.main.async {
@@ -58,50 +58,53 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         BonjourManager.shared.startAll(sessionId: sessionId, deviceModel: deviceModel)
 
         self.publishPose = false  // Wait for connection via discovered server or manual connect
-        arView.session.delegate = self
+        scnView.session.delegate = self
         let configuration = ARWorldTrackingConfiguration()
-        arView.session.run(configuration)
+        scnView.session.run(configuration)
         setupARGuides()
     }
 
     // MARK: - AR Visual Guides
 
     func setupARGuides() {
-        if let old = originAnchor { arView.scene.anchors.remove(old) }
+        originNode?.removeFromParentNode()
 
-        let origin = AnchorEntity(world: .zero)
-        let axisLength: Float = 0.15
-        let axisThick: Float = 0.004
+        let origin = SCNNode()
+        let axisLength: CGFloat = 0.15
+        let axisThick: CGFloat = 0.004
+
+        func unlitMaterial(_ color: UIColor) -> SCNMaterial {
+            let mat = SCNMaterial()
+            mat.diffuse.contents = color
+            mat.lightingModel = .constant
+            return mat
+        }
 
         // X — red
-        let xAxis = ModelEntity(
-            mesh: .generateBox(width: axisLength, height: axisThick, depth: axisThick),
-            materials: [UnlitMaterial(color: .red)])
-        xAxis.position = SIMD3(axisLength / 2, 0, 0)
-        origin.addChild(xAxis)
+        let xAxis = SCNNode(geometry: SCNBox(width: axisLength, height: axisThick, length: axisThick, chamferRadius: 0))
+        xAxis.geometry?.firstMaterial = unlitMaterial(.red)
+        xAxis.position = SCNVector3(axisLength / 2, 0, 0)
+        origin.addChildNode(xAxis)
 
         // Y — green
-        let yAxis = ModelEntity(
-            mesh: .generateBox(width: axisThick, height: axisLength, depth: axisThick),
-            materials: [UnlitMaterial(color: .green)])
-        yAxis.position = SIMD3(0, axisLength / 2, 0)
-        origin.addChild(yAxis)
+        let yAxis = SCNNode(geometry: SCNBox(width: axisThick, height: axisLength, length: axisThick, chamferRadius: 0))
+        yAxis.geometry?.firstMaterial = unlitMaterial(.green)
+        yAxis.position = SCNVector3(0, axisLength / 2, 0)
+        origin.addChildNode(yAxis)
 
         // Z — blue
-        let zAxis = ModelEntity(
-            mesh: .generateBox(width: axisThick, height: axisThick, depth: axisLength),
-            materials: [UnlitMaterial(color: .blue)])
-        zAxis.position = SIMD3(0, 0, axisLength / 2)
-        origin.addChild(zAxis)
+        let zAxis = SCNNode(geometry: SCNBox(width: axisThick, height: axisThick, length: axisLength, chamferRadius: 0))
+        zAxis.geometry?.firstMaterial = unlitMaterial(.blue)
+        zAxis.position = SCNVector3(0, 0, axisLength / 2)
+        origin.addChildNode(zAxis)
 
         // Origin sphere
-        let sphere = ModelEntity(
-            mesh: .generateSphere(radius: 0.008),
-            materials: [UnlitMaterial(color: .white)])
-        origin.addChild(sphere)
+        let sphere = SCNNode(geometry: SCNSphere(radius: 0.008))
+        sphere.geometry?.firstMaterial = unlitMaterial(.white)
+        origin.addChildNode(sphere)
 
-        arView.scene.addAnchor(origin)
-        originAnchor = origin
+        scnView.scene.rootNode.addChildNode(origin)
+        originNode = origin
     }
 
     // MARK: - Action Stream
@@ -119,7 +122,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                         self?.hasSentMetadata = false
                         self?.sessionId = UUID().uuidString
                         let configuration = ARWorldTrackingConfiguration()
-                        self?.arView.session.run(configuration, options: .resetTracking)
+                        self?.scnView.session.run(configuration, options: .resetTracking)
                         self?.setupARGuides()
                     case .disconnect:
                         self?.publishPose = false
@@ -233,7 +236,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        arView.session.pause()
+        scnView.session.pause()
     }
 
     static func deviceModelIdentifier() -> String {

@@ -54,6 +54,7 @@ class RecordingController: ObservableObject {
     @Published var deviceNodes: [DeviceNodeStatus] = []
     @Published var devicesFetchFailed = false
     @Published var isRestarting: Set<String> = []
+    @Published var isReplaying = false
 
     private var timer: Timer?
     private var readyPoller: Timer?

@@ -21,6 +21,9 @@
 		AA0001022BE89BE400DD0DFA /* OrientationCubeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001012BE89BE400DD0DFA /* OrientationCubeView.swift */; };
 		BB0002022FE89BE400DD0DFA /* BonjourManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002012FE89BE400DD0DFA /* BonjourManager.swift */; };
 		CC0003022FE89BE400DD0DFA /* RecordingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0003012FE89BE400DD0DFA /* RecordingController.swift */; };
+		DD0004022FE89BE400DD0DFA /* RecordingItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0004012FE89BE400DD0DFA /* RecordingItem.swift */; };
+		EE0005022FE89BE400DD0DFA /* DataManagementController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0005012FE89BE400DD0DFA /* DataManagementController.swift */; };
+		FF0006022FE89BE400DD0DFA /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0006012FE89BE400DD0DFA /* DataManagementView.swift */; };
 		C60F156BCCAB30F337E416B0 /* Pods_iPhoneVIOTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FCBD9B0D87942E8D561A1779 /* Pods_iPhoneVIOTests.framework */; };
 		CD4B63BF511C1AEA5309CA7A /* Pods_iPhoneVIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E023A5510CA7D9CA21F72D86 /* Pods_iPhoneVIO.framework */; };
 		E02FDF37472DB0A2C1B8AAA4 /* Pods_iPhoneVIO_iPhoneVIOUITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 648FEE11F75FCDFE352BFC75 /* Pods_iPhoneVIO_iPhoneVIOUITests.framework */; };
@@ -64,6 +67,9 @@
 		AA0001012BE89BE400DD0DFA /* OrientationCubeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationCubeView.swift; sourceTree = "<group>"; };
 		BB0002012FE89BE400DD0DFA /* BonjourManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourManager.swift; sourceTree = "<group>"; };
 		CC0003012FE89BE400DD0DFA /* RecordingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingController.swift; sourceTree = "<group>"; };
+		DD0004012FE89BE400DD0DFA /* RecordingItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingItem.swift; sourceTree = "<group>"; };
+		EE0005012FE89BE400DD0DFA /* DataManagementController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementController.swift; sourceTree = "<group>"; };
+		FF0006012FE89BE400DD0DFA /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
 		BB0002032FE89BE400DD0DFA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		648FEE11F75FCDFE352BFC75 /* Pods_iPhoneVIO_iPhoneVIOUITests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_iPhoneVIO_iPhoneVIOUITests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3F26058A35793C601D624AF /* Pods-iPhoneVIOTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-iPhoneVIOTests.release.xcconfig"; path = "Target Support Files/Pods-iPhoneVIOTests/Pods-iPhoneVIOTests.release.xcconfig"; sourceTree = "<group>"; };
@@ -135,6 +141,9 @@
 				1F6E8FE42BE89BE400DD0DFA /* NetworkClient.swift */,
 				BB0002012FE89BE400DD0DFA /* BonjourManager.swift */,
 				CC0003012FE89BE400DD0DFA /* RecordingController.swift */,
+				DD0004012FE89BE400DD0DFA /* RecordingItem.swift */,
+				EE0005012FE89BE400DD0DFA /* DataManagementController.swift */,
+				FF0006012FE89BE400DD0DFA /* DataManagementView.swift */,
 				AA0001012BE89BE400DD0DFA /* OrientationCubeView.swift */,
 				1F6E8FBD2BE89BAD00DD0DFA /* Assets.xcassets */,
 				1F6E8FBF2BE89BAD00DD0DFA /* Preview Content */,
@@ -401,6 +410,9 @@
 				AA0001022BE89BE400DD0DFA /* OrientationCubeView.swift in Sources */,
 				BB0002022FE89BE400DD0DFA /* BonjourManager.swift in Sources */,
 				CC0003022FE89BE400DD0DFA /* RecordingController.swift in Sources */,
+				DD0004022FE89BE400DD0DFA /* RecordingItem.swift in Sources */,
+				EE0005022FE89BE400DD0DFA /* DataManagementController.swift in Sources */,
+				FF0006022FE89BE400DD0DFA /* DataManagementView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
