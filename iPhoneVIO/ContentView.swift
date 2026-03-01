@@ -503,14 +503,30 @@ struct RecordingButton: View {
 struct FeasibleCapControlPanel: View {
     @ObservedObject var viewController: ViewController
 
+    private var feasibilityColor: Color {
+        switch viewController.feasibilityState {
+        case .feasible:   return .green
+        case .warning:    return .yellow
+        case .infeasible: return .red
+        }
+    }
+
+    private var feasibilityLabel: String {
+        switch viewController.feasibilityState {
+        case .feasible:   return "可行"
+        case .warning:    return "接近奇异"
+        case .infeasible: return "不可行"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Feasibility indicator
             HStack(spacing: 6) {
                 Circle()
-                    .fill(viewController.isFeasible ? Color.green : Color.red)
+                    .fill(feasibilityColor)
                     .frame(width: 10, height: 10)
-                Text(viewController.isFeasible ? "可行" : "不可行")
+                Text(feasibilityLabel)
                     .font(.system(size: 11, weight: .medium).monospaced())
                     .foregroundColor(.white)
             }

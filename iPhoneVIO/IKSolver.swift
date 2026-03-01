@@ -12,6 +12,7 @@ struct IKResult {
     let converged: Bool
     let positionError: Float
     let orientationError: Float
+    let manipulability: Float  // sqrt(det(J * J^T)), near 0 = singularity
 }
 
 class IKSolver {
@@ -67,7 +68,7 @@ class IKSolver {
 
     // MARK: - Jacobian (6x7)
 
-    private func computeJacobian(_ q: [Float], fk: FKResult) -> [Float] {
+    func computeJacobian(_ q: [Float], fk: FKResult) -> [Float] {
         let eePos = SIMD3<Float>(fk.eePose.columns.3.x, fk.eePose.columns.3.y, fk.eePose.columns.3.z)
         var jacobian = [Float](repeating: 0, count: 6 * dof)
 
@@ -123,8 +124,10 @@ class IKSolver {
             oriErr = sqrt(error[3]*error[3] + error[4]*error[4] + error[5]*error[5])
 
             if posErr < positionTolerance && oriErr < orientationTolerance {
+                let w = computeManipulability(q, fk: lastFK)
                 return IKResult(jointAngles: q, fkResult: lastFK, converged: true,
-                                positionError: posErr, orientationError: oriErr)
+                                positionError: posErr, orientationError: oriErr,
+                                manipulability: w)
             }
 
             // Compute Jacobian (6x7, column-major)
@@ -189,9 +192,51 @@ class IKSolver {
         posErr = sqrt(finalError[0]*finalError[0] + finalError[1]*finalError[1] + finalError[2]*finalError[2])
         oriErr = sqrt(finalError[3]*finalError[3] + finalError[4]*finalError[4] + finalError[5]*finalError[5])
 
+        let w = computeManipulability(q, fk: lastFK)
         return IKResult(jointAngles: q, fkResult: lastFK,
                         converged: posErr < positionTolerance && oriErr < orientationTolerance,
-                        positionError: posErr, orientationError: oriErr)
+                        positionError: posErr, orientationError: oriErr,
+                        manipulability: w)
+    }
+
+    // MARK: - Manipulability
+
+    /// Compute manipulability index w = sqrt(det(J * J^T)) via LU factorization
+    func computeManipulability(_ q: [Float], fk: FKResult) -> Float {
+        let J = computeJacobian(q, fk: fk)
+
+        // Compute A = J * J^T (6x6, column-major)
+        var A = [Float](repeating: 0, count: 36)
+        for r1 in 0..<6 {
+            for r2 in r1..<6 {
+                var sum: Float = 0
+                for k in 0..<dof {
+                    sum += J[r1 + k * 6] * J[r2 + k * 6]
+                }
+                A[r1 + r2 * 6] = sum
+                A[r2 + r1 * 6] = sum
+            }
+        }
+
+        // LU factorization to compute determinant
+        var m: Int32 = 6
+        var n: Int32 = 6
+        var lda: Int32 = 6
+        var ipiv = [Int32](repeating: 0, count: 6)
+        var info: Int32 = 0
+        sgetrf_(&m, &n, &A, &lda, &ipiv, &info)
+
+        if info != 0 { return 0 }
+
+        // det = product of diagonal elements (with sign from pivots)
+        var det: Float = 1.0
+        for i in 0..<6 {
+            det *= A[i + i * 6]
+            if ipiv[i] != Int32(i + 1) { det = -det }
+        }
+
+        // w = sqrt(|det|) since det(J*J^T) >= 0 for real J
+        return sqrt(max(0, det))
     }
 
     // MARK: - Error Computation

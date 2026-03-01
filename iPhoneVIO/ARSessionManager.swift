@@ -45,7 +45,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
 
     @Published var isClutchEngaged = false
     @Published var isGhostVisible = false
-    @Published var isFeasible = true
+    @Published var feasibilityState: FeasibilityState = .feasible
     @Published var robotBasePlaced = false
     @Published var isPlacingBaseMode = false
     @Published var hasPlacementPreview = false
@@ -279,7 +279,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                         self.isPlacingBaseMode = false
                         self.hasPlacementPreview = false
                         self.robotBasePlaced = false
-                        self.isFeasible = true
+                        self.feasibilityState = .feasible
                         self.pendingBaseTransform = nil
                         self.pendingBaseHitPosition = nil
                         self.pendingBaseYaw = nil
@@ -486,8 +486,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         robotRenderer?.setBaseTransform(transform)
         robotRenderer?.show()
         isGhostVisible = true
-        isFeasible = true
-        robotRenderer?.setFeasibility(true)
+        feasibilityState = .feasible
+        robotRenderer?.setFeasibilityState(.feasible)
 
         // Update marker visualization (frame + axes)
         updateMarkerVisualization(worldTransform: worldTransform)
@@ -815,9 +815,9 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         if let solver = ikSolver, let renderer = robotRenderer {
             let fk = solver.forwardKinematics(previousJointAngles)
             renderer.updateTransforms(fk)
-            renderer.setFeasibility(true)
+            renderer.setFeasibilityState(.feasible)
         }
-        isFeasible = true
+        feasibilityState = .feasible
         robotRenderer?.show()
         isGhostVisible = true
         clearArucoVisuals()
@@ -905,7 +905,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         // 预览阶段固定使用“放置后初始姿态”，确保确认前后姿态一致
         let previewFK = solver.forwardKinematics(placementInitJointAngles)
         renderer.updateTransforms(previewFK)
-        renderer.setFeasibility(true)
+        renderer.setFeasibilityState(.feasible)
         renderer.show()
         isGhostVisible = true
         return true
@@ -972,8 +972,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         robotRenderer?.setBaseTransform(transform)
         robotRenderer?.show()
         isGhostVisible = true
-        isFeasible = true
-        robotRenderer?.setFeasibility(true)
+        feasibilityState = .feasible
+        robotRenderer?.setFeasibilityState(.feasible)
         return true
     }
 
@@ -1008,8 +1008,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         previousJointAngles = angles
         let fk = solver.forwardKinematics(angles)
         renderer.updateTransforms(fk)
-        renderer.setFeasibility(true)
-        isFeasible = true
+        renderer.setFeasibilityState(.feasible)
+        feasibilityState = .feasible
         renderer.show()
         isGhostVisible = true
     }
@@ -1072,15 +1072,21 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         let ikResult = solver.solve(target: targetPose, warmStart: previousJointAngles)
         renderer.updateTransforms(ikResult.fkResult)
 
-        // 可行性评估
+        // 可行性评估 (三级: feasible / warning / infeasible)
         let result = checker.evaluate(ikResult: ikResult, timestamp: timestamp)
-        let newFeasible = result.feasible
-        if newFeasible != isFeasible {
-            isFeasible = newFeasible
-            renderer.setFeasibility(newFeasible)
+        let newState = result.state
+        if newState != feasibilityState {
+            feasibilityState = newState
+            renderer.setFeasibilityState(newState)
             hapticManager?.transientPulse()
-            if newFeasible { hapticManager?.stopWarning() }
-            else { hapticManager?.startWarning() }
+            switch newState {
+            case .feasible:
+                hapticManager?.stopWarning()
+            case .warning:
+                hapticManager?.setWarningMode(.mild)
+            case .infeasible:
+                hapticManager?.setWarningMode(.strong)
+            }
         }
 
         previousJointAngles = ikResult.jointAngles

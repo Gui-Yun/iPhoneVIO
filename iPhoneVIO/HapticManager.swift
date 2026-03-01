@@ -4,7 +4,13 @@ import UIKit
 class HapticManager {
     private var engine: CHHapticEngine?
     private var continuousPlayer: CHHapticAdvancedPatternPlayer?
-    private var isWarning = false
+    private var currentMode: WarningMode = .none
+
+    enum WarningMode {
+        case none
+        case mild       // approaching singularity: low intensity intermittent
+        case strong     // infeasible: high intensity continuous
+    }
 
     init() {
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
@@ -20,30 +26,60 @@ class HapticManager {
         }
     }
 
-    func startWarning() {
-        guard !isWarning, let engine = engine else { return }
-        isWarning = true
+    /// Start or switch to the specified warning mode
+    func setWarningMode(_ mode: WarningMode) {
+        guard mode != currentMode else { return }
 
-        let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.6)
-        let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.8)
-        let event = CHHapticEvent(eventType: .hapticContinuous, parameters: [intensity, sharpness],
-                                  relativeTime: 0, duration: 100)
+        // Stop current player
+        if currentMode != .none {
+            try? continuousPlayer?.stop(atTime: CHHapticTimeImmediate)
+            continuousPlayer = nil
+        }
+
+        currentMode = mode
+
+        guard mode != .none, let engine = engine else { return }
 
         do {
-            let pattern = try CHHapticPattern(events: [event], parameters: [])
+            let pattern: CHHapticPattern
+            switch mode {
+            case .mild:
+                // Intermittent low-intensity pulses (repeating pattern)
+                var events: [CHHapticEvent] = []
+                let count = 50  // enough for ~50s
+                for i in 0..<count {
+                    let t = Double(i) * 1.0  // one pulse per second
+                    let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.3)
+                    let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.4)
+                    events.append(CHHapticEvent(eventType: .hapticContinuous,
+                                                parameters: [intensity, sharpness],
+                                                relativeTime: t, duration: 0.15))
+                }
+                pattern = try CHHapticPattern(events: events, parameters: [])
+
+            case .strong:
+                // Continuous high-intensity warning
+                let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.6)
+                let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.8)
+                let event = CHHapticEvent(eventType: .hapticContinuous,
+                                          parameters: [intensity, sharpness],
+                                          relativeTime: 0, duration: 100)
+                pattern = try CHHapticPattern(events: [event], parameters: [])
+
+            case .none:
+                return
+            }
+
             continuousPlayer = try engine.makeAdvancedPlayer(with: pattern)
             try continuousPlayer?.start(atTime: CHHapticTimeImmediate)
         } catch {
-            print("[HapticManager] Start warning failed: \(error)")
-            isWarning = false
+            print("[HapticManager] Warning mode \(mode) failed: \(error)")
+            currentMode = .none
         }
     }
 
     func stopWarning() {
-        guard isWarning else { return }
-        isWarning = false
-        try? continuousPlayer?.stop(atTime: CHHapticTimeImmediate)
-        continuousPlayer = nil
+        setWarningMode(.none)
     }
 
     func transientPulse() {

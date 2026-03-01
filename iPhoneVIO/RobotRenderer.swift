@@ -6,6 +6,7 @@ class RobotRenderer {
     let rootNode: SCNNode
     private var linkNodes: [SCNNode] = []
     private let feasibleMaterial: SCNMaterial
+    private let warningMaterial: SCNMaterial
     private let infeasibleMaterial: SCNMaterial
     private var meshScale: Float = 1.0
 
@@ -16,6 +17,9 @@ class RobotRenderer {
 
         feasibleMaterial = RobotRenderer.makeMaterial(
             color: UIColor(red: 0.7, green: 1.0, blue: 0.7, alpha: 0.5)
+        )
+        warningMaterial = RobotRenderer.makeMaterial(
+            color: UIColor(red: 1.0, green: 0.85, blue: 0.2, alpha: 0.5)
         )
         infeasibleMaterial = RobotRenderer.makeMaterial(
             color: UIColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.5)
@@ -172,8 +176,13 @@ class RobotRenderer {
         SCNTransaction.commit()
     }
 
-    func setFeasibility(_ feasible: Bool) {
-        let material = feasible ? feasibleMaterial : infeasibleMaterial
+    func setFeasibilityState(_ state: FeasibilityState) {
+        let material: SCNMaterial
+        switch state {
+        case .feasible:   material = feasibleMaterial
+        case .warning:    material = warningMaterial
+        case .infeasible: material = infeasibleMaterial
+        }
         for node in linkNodes {
             node.enumerateChildNodes { child, _ in
                 child.geometry?.materials = [material]

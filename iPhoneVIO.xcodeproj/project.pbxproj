@@ -32,6 +32,7 @@
 		EE7C4B3319F7E2791EE9D3EF /* IKSolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F5B20785166C9DA027ECB6 /* IKSolver.swift */; };
 		A00DDADDAC75BB46B8BF547D /* RobotRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */; };
 		8F187EB51CF2B34D2CAC0695 /* FeasibilityChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */; };
+		B1C2D3E400000001 /* SelfCollisionChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E400000002 /* SelfCollisionChecker.swift */; };
 		A7E7AEADA62E99660BE7A116 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */; };
 		BB07B84B316BB9667BCC370F /* RM75 in Resources */ = {isa = PBXBuildFile; fileRef = C8965478D5912ACA61B0ED44 /* RM75 */; };
 		D1A2B3C4E5F6A7B800000001 /* gripper in Resources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B800000002 /* gripper */; };
@@ -93,6 +94,7 @@
 		89F5B20785166C9DA027ECB6 /* IKSolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IKSolver.swift; sourceTree = "<group>"; };
 		77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RobotRenderer.swift; sourceTree = "<group>"; };
 		F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeasibilityChecker.swift; sourceTree = "<group>"; };
+		B1C2D3E400000002 /* SelfCollisionChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfCollisionChecker.swift; sourceTree = "<group>"; };
 		C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		C8965478D5912ACA61B0ED44 /* RM75 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RM75; path = Resources/RM75; sourceTree = "<group>"; };
 		D1A2B3C4E5F6A7B800000002 /* gripper */ = {isa = PBXFileReference; lastKnownFileType = folder; name = gripper; path = Resources/gripper; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 				89F5B20785166C9DA027ECB6 /* IKSolver.swift */,
 				77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */,
 				F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */,
+				B1C2D3E400000002 /* SelfCollisionChecker.swift */,
 				C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */,
 				A1B2C3D400000001 /* ArucoDetector.swift */,
 				A1B2C3D400000003 /* ArucoDictionary.swift */,
@@ -453,6 +456,7 @@
 				EE7C4B3319F7E2791EE9D3EF /* IKSolver.swift in Sources */,
 				A00DDADDAC75BB46B8BF547D /* RobotRenderer.swift in Sources */,
 				8F187EB51CF2B34D2CAC0695 /* FeasibilityChecker.swift in Sources */,
+				B1C2D3E400000001 /* SelfCollisionChecker.swift in Sources */,
 				A7E7AEADA62E99660BE7A116 /* HapticManager.swift in Sources */,
 				A1B2C3D400000002 /* ArucoDetector.swift in Sources */,
 				A1B2C3D400000004 /* ArucoDictionary.swift in Sources */,
