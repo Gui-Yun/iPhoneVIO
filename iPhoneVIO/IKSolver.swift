@@ -21,6 +21,7 @@ class IKSolver {
     private let positionTolerance: Float = 0.001   // 1mm
     private let orientationTolerance: Float = 0.01  // rad
     private let lambdaSq: Float = 0.01             // DLS damping λ²
+    private let maxJointStepPerIteration: Float = 0.15  // rad, improves numerical stability
 
     // Precomputed: parent index for each joint (index into links array)
     private let parentIndices: [Int]
@@ -177,7 +178,8 @@ class IKSolver {
 
             // 4. Update and clamp
             for j in 0..<dof {
-                q[j] += dq[j]
+                let boundedStep = max(-maxJointStepPerIteration, min(maxJointStepPerIteration, dq[j]))
+                q[j] += boundedStep
                 q[j] = max(model.joints[j].posLower, min(model.joints[j].posUpper, q[j]))
             }
         }
@@ -224,34 +226,40 @@ class IKSolver {
     private func axisAngleFromRotation(_ R: simd_float3x3) -> SIMD3<Float> {
         // Using the skew-symmetric part: axis * sin(theta) = 0.5 * [R32-R23, R13-R31, R21-R12]
         let v = SIMD3<Float>(
-            R[2][1] - R[1][2],  // R32 - R23
-            R[0][2] - R[2][0],  // R13 - R31
-            R[1][0] - R[0][1]   // R21 - R12
+            R[1][2] - R[2][1],  // R32 - R23 (simd index order is [column][row])
+            R[2][0] - R[0][2],  // R13 - R31
+            R[0][1] - R[1][0]   // R21 - R12
         ) * 0.5
 
         let sinTheta = length(v)
         let cosTheta = (R[0][0] + R[1][1] + R[2][2] - 1) * 0.5
+        let clampedCosTheta = max(-1.0, min(1.0, cosTheta))
 
         if sinTheta < 1e-6 {
-            if cosTheta > 0 {
+            if clampedCosTheta > 0 {
                 return .zero  // No rotation
             } else {
                 // theta ≈ π, need to extract axis from diagonal
                 let diag = SIMD3<Float>(R[0][0], R[1][1], R[2][2])
                 let maxIdx = diag.x >= diag.y && diag.x >= diag.z ? 0 : (diag.y >= diag.z ? 1 : 2)
                 var axis = SIMD3<Float>.zero
-                axis[maxIdx] = sqrt((diag[maxIdx] + 1) * 0.5)
-                let denom = 2 * axis[maxIdx]
+                axis[maxIdx] = sqrt(max(0, (diag[maxIdx] + 1) * 0.5))
+                let denom = 4 * axis[maxIdx]
                 if denom > 1e-6 {
                     for j in 0..<3 where j != maxIdx {
-                        axis[j] = R[maxIdx][j] / denom  // (R + R^T) off-diag / 2*axis[maxIdx]
+                        axis[j] = (R[j][maxIdx] + R[maxIdx][j]) / denom
                     }
+                }
+                if length(axis) > 1e-6 {
+                    axis = normalize(axis)
+                } else {
+                    axis = SIMD3<Float>(1, 0, 0)
                 }
                 return axis * Float.pi
             }
         }
 
-        let theta = atan2(sinTheta, cosTheta)
+        let theta = atan2(sinTheta, clampedCosTheta)
         return v * (theta / sinTheta)
     }
 }

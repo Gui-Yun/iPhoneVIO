@@ -81,6 +81,86 @@ class RobotRenderer {
             linkNodes.append(wrapperNode)
             rootNode.addChildNode(wrapperNode)
         }
+
+        // Attach gripper to Link7 wrapper
+        if let link7Wrapper = linkNodes.last {
+            loadGripper(parentNode: link7Wrapper)
+        }
+    }
+
+    // MARK: - Gripper
+
+    private func loadGripper(parentNode: SCNNode) {
+        // Fixed joint: attach gripper base to Link7 with rpy="0 π/2 0"
+        let gripperAttach = SCNNode()
+        gripperAttach.name = "gripper_attach"
+        gripperAttach.simdTransform = makeTransform(
+            xyz: SIMD3<Float>(0, 0, 0),
+            rpy: SIMD3<Float>(0, -.pi / 2, 0)
+        )
+
+        // Gripper base link
+        let gripperBase = loadGripperMesh(filename: "base_link", extension: "stl")
+        gripperBase.name = "gripper_base"
+        gripperAttach.addChildNode(gripperBase)
+
+        // Left finger: joint origin xyz="0.062457 -0.07246 0.029826"
+        //              visual origin xyz="-0.062457 0.07246 -0.029826"
+        let leftJointNode = SCNNode()
+        leftJointNode.name = "gripper_left_joint"
+        leftJointNode.simdTransform = makeTransform(
+            xyz: SIMD3<Float>(0.062457, -0.07246, 0.029826),
+            rpy: .zero
+        )
+        let leftVisualNode = SCNNode()
+        leftVisualNode.simdTransform = makeTransform(
+            xyz: SIMD3<Float>(-0.062457, 0.07246, -0.029826),
+            rpy: .zero
+        )
+        let leftMesh = loadGripperMesh(filename: "gripper_left_1_1", extension: "stl")
+        leftVisualNode.addChildNode(leftMesh)
+        leftJointNode.addChildNode(leftVisualNode)
+        gripperAttach.addChildNode(leftJointNode)
+
+        // Right finger: joint origin xyz="0.062457 0.072822 -0.028386"
+        //               visual origin xyz="-0.062457 -0.072822 0.028386"
+        let rightJointNode = SCNNode()
+        rightJointNode.name = "gripper_right_joint"
+        rightJointNode.simdTransform = makeTransform(
+            xyz: SIMD3<Float>(0.062457, 0.072822, -0.028386),
+            rpy: .zero
+        )
+        let rightVisualNode = SCNNode()
+        rightVisualNode.simdTransform = makeTransform(
+            xyz: SIMD3<Float>(-0.062457, -0.072822, 0.028386),
+            rpy: .zero
+        )
+        let rightMesh = loadGripperMesh(filename: "gripper_right_1_1", extension: "stl")
+        rightVisualNode.addChildNode(rightMesh)
+        rightJointNode.addChildNode(rightVisualNode)
+        gripperAttach.addChildNode(rightJointNode)
+
+        parentNode.addChildNode(gripperAttach)
+    }
+
+    private func loadGripperMesh(filename: String, extension ext: String) -> SCNNode {
+        let node = SCNNode()
+        guard let url = Bundle.main.url(forResource: filename,
+                                        withExtension: ext,
+                                        subdirectory: "gripper") else {
+            print("[RobotRenderer] Gripper mesh not found: \(filename).\(ext)")
+            return node
+        }
+
+        let asset = MDLAsset(url: url)
+        if let mdlMesh = asset.object(at: 0) as? MDLMesh {
+            let meshNode = SCNNode(mdlObject: mdlMesh)
+            meshNode.geometry?.materials = [feasibleMaterial]
+            node.geometry = meshNode.geometry
+            // Gripper meshes are in mm, scale to meters
+            node.scale = SCNVector3(0.001, 0.001, 0.001)
+        }
+        return node
     }
 
     func updateTransforms(_ fkResult: FKResult) {

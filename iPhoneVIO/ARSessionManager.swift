@@ -9,6 +9,7 @@ import Foundation
 import ARKit
 import SceneKit
 import Combine
+import UIKit
 
 class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     @Published var displayString: String = ""
@@ -22,10 +23,12 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     var prevTimestamp: Double = 0.0
 
     private let jpegQueue = DispatchQueue(label: "com.iphoneVIO.jpeg", qos: .userInitiated)
+    private let frameProcessingLock = NSLock()
     private let ciContext = CIContext()
     private var sessionId = UUID().uuidString
     private var hasSentMetadata = false
     private var jpegQuality: CGFloat = 0.7
+    private var isFrameProcessing = false
 
     // AR guides
     private var originNode: SCNNode?
@@ -44,12 +47,43 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     @Published var isGhostVisible = false
     @Published var isFeasible = true
     @Published var robotBasePlaced = false
+    @Published var isPlacingBaseMode = false
+    @Published var hasPlacementPreview = false
+    @Published var placementHeightOffsetMeters: Float = 0
+    @Published var isArucoMarkerDetected = false
+    @Published var arucoDebugText: String = ""
+
+    private var isArucoPlacementMode = false
+    private var arucoDetector: ArucoDetector?
+    private var lastArucoPoseLogTimestamp: TimeInterval = 0
+    private var markerVizNode: SCNNode?
+    private let targetArucoId: Int = 13
+    private var arucoMissCount: Int = 0
+    private let arucoMissTolerance: Int = 15
+    private let arucoOverlayLayer = CAShapeLayer()
+    private let arucoXAxisLayer = CAShapeLayer()
+    private let arucoYAxisLayer = CAShapeLayer()
+    private let arucoCenterLayer = CAShapeLayer()
 
     private var robotBaseTransform = matrix_identity_float4x4
-    private var camToTCPOffset = matrix_identity_float4x4
     private var isPlacingBase = false
     private var feasibleCapInitialized = false
     private var hasStartedARSession = false
+    private var pendingBaseTransform: simd_float4x4?
+    private var pendingBaseHitPosition: SIMD3<Float>?
+    private var pendingBaseYaw: Float?
+    private var pendingBaseHeightOffset: Float = 0
+    private var baseTransformBeforePlacement: simd_float4x4?
+
+    /// RM75 Home 姿态（度）: -100, -38, -156, 50, -15, 85, 90
+    private let homeJointAnglesDeg: [Float] = [-100, -38, -156, 50, -15, 85, 90]
+    private var homeJointAngles: [Float] {
+        homeJointAnglesDeg.map { $0 * .pi / 180 }
+    }
+
+    // 遥操作锚点（engage 时快照）
+    private var clutchCameraRef: simd_float4x4?
+    private var clutchEERef: simd_float4x4?
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
@@ -62,6 +96,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         scnView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scnView.debugOptions.insert(.showFeaturePoints)
         view.addSubview(scnView)
+        setupArucoOverlayLayers()
 
         networkClient.onStatusChange = { [weak self] status in
             DispatchQueue.main.async {
@@ -73,6 +108,14 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         // Tap gesture for base placement (FeasibleCap)
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         scnView.addGestureRecognizer(tapGesture)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        arucoOverlayLayer.frame = scnView.bounds
+        arucoXAxisLayer.frame = scnView.bounds
+        arucoYAxisLayer.frame = scnView.bounds
+        arucoCenterLayer.frame = scnView.bounds
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -92,10 +135,15 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
 
         self.publishPose = false  // Wait for connection via discovered server or manual connect
         scnView.session.delegate = self
-        let configuration = ARWorldTrackingConfiguration()
-        configuration.planeDetection = [.horizontal]
+        let configuration = createARConfiguration()
         scnView.session.run(configuration)
         setupARGuides()
+    }
+
+    private func createARConfiguration() -> ARWorldTrackingConfiguration {
+        let configuration = ARWorldTrackingConfiguration()
+        configuration.planeDetection = [.horizontal]
+        return configuration
     }
 
     // MARK: - AR Visual Guides
@@ -153,12 +201,16 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
             .sink { [weak self] action in
                 switch action {
                     case .resetOrigin:
-                        self?.hasSentMetadata = false
-                        self?.sessionId = UUID().uuidString
-                        let configuration = ARWorldTrackingConfiguration()
-                        configuration.planeDetection = [.horizontal]
-                        self?.scnView.session.run(configuration, options: .resetTracking)
-                        self?.setupARGuides()
+                        guard let self = self else { return }
+                        self.hasSentMetadata = false
+                        self.sessionId = UUID().uuidString
+                        self.isArucoMarkerDetected = false
+                        self.lastArucoPoseLogTimestamp = 0
+                        self.arucoMissCount = 0
+                        self.clearArucoVisuals()
+                        let configuration = self.createARConfiguration()
+                        self.scnView.session.run(configuration, options: .resetTracking)
+                        self.setupARGuides()
                     case .disconnect:
                         self?.publishPose = false
                         self?.networkClient.disconnect()
@@ -173,25 +225,70 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                         self.publishPose = true
 
                     // FeasibleCap actions
+                    case .startArucoPlacement:
+                        guard let self = self else { return }
+                        self.isArucoPlacementMode = true
+                        self.arucoMissCount = 0
+                        print("[ArUco] Enter ArUco placement mode.")
+                        self.startBasePlacement()
                     case .startBasePlacement:
-                        self?.isPlacingBase = true
+                        guard let self = self else { return }
+                        self.isArucoPlacementMode = false
+                        self.arucoMissCount = 0
+                        print("[ArUco] Enter manual placement mode.")
+                        self.startBasePlacement()
+                    case .confirmBasePlacement:
+                        self?.confirmBasePlacement()
+                    case .cancelBasePlacement:
+                        self?.cancelBasePlacement()
+                    case .rotateBaseYaw(let delta):
+                        self?.rotatePlacementYaw(by: delta)
+                    case .adjustBaseHeight(let delta):
+                        self?.adjustPlacementHeight(by: delta)
                     case .toggleClutch:
                         guard let self = self else { return }
                         self.isClutchEngaged.toggle()
                         if self.isClutchEngaged {
+                            // 记录锚点
+                            self.clutchCameraRef = self.cameraTransform
+                            if let solver = self.ikSolver {
+                                let fk = solver.forwardKinematics(self.previousJointAngles)
+                                self.clutchEERef = fk.eePose
+                            }
                             self.feasibilityChecker?.reset()
+                        } else {
+                            self.clutchCameraRef = nil
+                            self.clutchEERef = nil
+                            self.hapticManager?.stopWarning()
                         }
-                    case .calibrateCamToTCP:
-                        // Store current camera-to-base offset as TCP calibration
-                        break
+                    case .setZeroPose:
+                        self?.setJointAngles(Array(repeating: 0, count: 7))
+                    case .setHomePose:
+                        self?.setJointAngles(self?.homeJointAngles ?? [])
                     case .resetGhostArm:
                         guard let self = self else { return }
                         self.robotRenderer?.hide()
                         self.isGhostVisible = false
                         self.isClutchEngaged = false
+                        self.isPlacingBase = false
+                        self.isPlacingBaseMode = false
+                        self.hasPlacementPreview = false
                         self.robotBasePlaced = false
                         self.isFeasible = true
+                        self.pendingBaseTransform = nil
+                        self.pendingBaseHitPosition = nil
+                        self.pendingBaseYaw = nil
+                        self.pendingBaseHeightOffset = 0
+                        self.placementHeightOffsetMeters = 0
+                        self.baseTransformBeforePlacement = nil
+                        self.clutchCameraRef = nil
+                        self.clutchEERef = nil
                         self.previousJointAngles = Array(repeating: 0, count: 7)
+                        self.isArucoPlacementMode = false
+                        self.isArucoMarkerDetected = false
+                        self.lastArucoPoseLogTimestamp = 0
+                        self.arucoMissCount = 0
+                        self.clearArucoVisuals()
                         self.feasibilityChecker?.reset()
                         self.hapticManager?.stopWarning()
                 }
@@ -247,6 +344,53 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
             trackingStatus = "No tracking"
         }
 
+        // Native ArUco detection (runs on background queue)
+        if isArucoPlacementMode && isPlacingBase {
+            if arucoDetector == nil { arucoDetector = ArucoDetector() }
+            let imageSize = CGSize(
+                width: CVPixelBufferGetWidthOfPlane(frame.capturedImage, 0),
+                height: CVPixelBufferGetHeightOfPlane(frame.capturedImage, 0)
+            )
+            let displayTransform = frame.displayTransform(for: .landscapeRight, viewportSize: scnView.bounds.size)
+            arucoDetector?.detect(
+                pixelBuffer: frame.capturedImage,
+                intrinsics: frame.camera.intrinsics,
+                cameraTransform: frame.camera.transform
+            ) { [weak self] result in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    guard self.isArucoPlacementMode && self.isPlacingBase else { return }
+                    if let detector = self.arucoDetector {
+                        let d = detector.lastDebugInfo
+                        let bitsStr = d.decodedBits.map { String(format: "0x%04X", $0) } ?? "-"
+                        self.arucoDebugText = "C:\(d.contourCount) Q:\(d.quadCount) D:\(d.candidateCount) bits:\(bitsStr) border:\(d.borderOK ? "Y" : "N") id:\(d.matchedId.map { String($0) } ?? "-")"
+                    }
+                    if let result {
+                        self.arucoDebugText += " hit:\(result.markerId)"
+                        if result.markerId == self.targetArucoId {
+                            self.arucoMissCount = 0
+                            self.isArucoMarkerDetected = true
+                            self.updateArucoScreenOverlay(
+                                corners: result.corners,
+                                imageSize: imageSize,
+                                displayTransform: displayTransform
+                            )
+                            self.updateArucoBasePlacement(worldTransform: result.worldTransform)
+                        }
+                        // Ignore non-target IDs — don't clear state
+                    } else {
+                        self.arucoMissCount += 1
+                        if self.arucoMissCount > self.arucoMissTolerance {
+                            self.isArucoMarkerDetected = false
+                            self.clearArucoScreenOverlay()
+                        }
+                    }
+                }
+            }
+        }
+
+        updatePlacementPreview(cameraTransform: transform)
+
         // FeasibleCap ghost arm update
         updateGhostArm(cameraTransform: transform, timestamp: timestamp)
 
@@ -274,11 +418,13 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
 
         // Backpressure: skip frame if still sending previous
         guard !networkClient.isSending else { return }
+        guard beginFrameProcessing() else { return }
 
         // Compress JPEG on background queue
         let pixelBuffer = frame.capturedImage
         jpegQueue.async { [weak self] in
             guard let self else { return }
+            defer { self.endFrameProcessing() }
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
             guard let jpeg = self.ciContext.jpegRepresentation(
                 of: ciImage,
@@ -295,11 +441,283 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         }
     }
 
+    // MARK: - Native ArUco Detection
+
+    private func updateArucoBasePlacement(worldTransform: simd_float4x4) {
+        let position = SIMD3<Float>(
+            worldTransform.columns.3.x,
+            worldTransform.columns.3.y,
+            worldTransform.columns.3.z
+        )
+        pendingBaseHitPosition = position
+
+        // Extract yaw from marker's X-axis projected onto XZ plane
+        let markerXAxis = SIMD3<Float>(
+            worldTransform.columns.0.x,
+            0,
+            worldTransform.columns.0.z
+        )
+        let len = length(markerXAxis)
+        if len > 1e-4 {
+            let normalized = markerXAxis / len
+            pendingBaseYaw = atan2(normalized.x, normalized.z)
+        }
+        let yaw = pendingBaseYaw ?? 0
+
+        let transform = buildBaseTransform(
+            hitPosition: position,
+            yaw: yaw,
+            heightOffset: pendingBaseHeightOffset
+        )
+        pendingBaseTransform = transform
+        hasPlacementPreview = true
+
+        let now = Date().timeIntervalSince1970
+        if now - lastArucoPoseLogTimestamp >= 1.0 {
+            print(String(format: "[ArUco] Pose update x=%.3f y=%.3f z=%.3f yaw=%.1fdeg",
+                         position.x, position.y, position.z, yaw * 180 / .pi))
+            lastArucoPoseLogTimestamp = now
+        }
+
+        robotRenderer?.setBaseTransform(transform)
+        robotRenderer?.show()
+        isGhostVisible = true
+        isFeasible = true
+        robotRenderer?.setFeasibility(true)
+
+        // Update marker visualization (frame + axes)
+        updateMarkerVisualization(worldTransform: worldTransform)
+    }
+
+    // MARK: - Marker Visualization (3D frame + axes on detected marker)
+
+    private func updateMarkerVisualization(worldTransform: simd_float4x4) {
+        if markerVizNode == nil {
+            markerVizNode = createMarkerVizNode()
+            scnView.scene.rootNode.addChildNode(markerVizNode!)
+            print("[ArUco] Marker viz node created and added to scene")
+        }
+        markerVizNode?.simdTransform = worldTransform
+        markerVizNode?.isHidden = false
+    }
+
+    private func setupArucoOverlayLayers() {
+        func configureLineLayer(_ layer: CAShapeLayer, color: UIColor, width: CGFloat) {
+            layer.strokeColor = color.cgColor
+            layer.fillColor = UIColor.clear.cgColor
+            layer.lineWidth = width
+            layer.lineJoin = .round
+            layer.lineCap = .round
+            layer.zPosition = 10_000
+        }
+
+        configureLineLayer(arucoOverlayLayer, color: .yellow, width: 4)
+        arucoOverlayLayer.fillColor = UIColor.yellow.withAlphaComponent(0.15).cgColor
+        configureLineLayer(arucoXAxisLayer, color: .red, width: 3)
+        configureLineLayer(arucoYAxisLayer, color: .green, width: 3)
+
+        arucoCenterLayer.strokeColor = UIColor.white.cgColor
+        arucoCenterLayer.fillColor = UIColor.white.cgColor
+        arucoCenterLayer.lineWidth = 1
+        arucoCenterLayer.zPosition = 10_001
+
+        scnView.layer.addSublayer(arucoOverlayLayer)
+        scnView.layer.addSublayer(arucoXAxisLayer)
+        scnView.layer.addSublayer(arucoYAxisLayer)
+        scnView.layer.addSublayer(arucoCenterLayer)
+    }
+
+    private func updateArucoScreenOverlay(
+        corners: [SIMD2<Float>],
+        imageSize: CGSize,
+        displayTransform: CGAffineTransform
+    ) {
+        guard corners.count == 4, imageSize.width > 0, imageSize.height > 0 else {
+            clearArucoScreenOverlay()
+            return
+        }
+
+        let normalized = corners.map {
+            CGPoint(x: CGFloat($0.x) / imageSize.width, y: CGFloat($0.y) / imageSize.height)
+        }
+
+        let mappedDirect = normalized.map { $0.applying(displayTransform) }
+        let mappedInverted = normalized.map { $0.applying(displayTransform.inverted()) }
+
+        func inBoundsScore(_ points: [CGPoint]) -> Int {
+            points.reduce(0) { partial, p in
+                partial + ((0...1).contains(p.x) && (0...1).contains(p.y) ? 1 : 0)
+            }
+        }
+
+        let directScore = inBoundsScore(mappedDirect)
+        let invertedScore = inBoundsScore(mappedInverted)
+        let mappedNorm = directScore >= invertedScore ? mappedDirect : mappedInverted
+        let viewPoints = mappedNorm.map { p in
+            CGPoint(x: p.x * scnView.bounds.width, y: p.y * scnView.bounds.height)
+        }
+
+        // Debug: log screen coordinates once per second
+        let now = Date().timeIntervalSince1970
+        if now - lastArucoPoseLogTimestamp >= 0.5 {
+            let nStr = normalized.map { String(format: "(%.3f,%.3f)", $0.x, $0.y) }.joined(separator: " ")
+            let dStr = mappedDirect.map { String(format: "(%.2f,%.2f)", $0.x, $0.y) }.joined(separator: " ")
+            let vStr = viewPoints.map { String(format: "(%.0f,%.0f)", $0.x, $0.y) }.joined(separator: " ")
+            print("[ArUco-2D] norm=[\(nStr)] direct=[\(dStr)] dScore=\(directScore) iScore=\(invertedScore) view=[\(vStr)] bounds=\(scnView.bounds.size)")
+        }
+
+        let boxPath = UIBezierPath()
+        boxPath.move(to: viewPoints[0])
+        boxPath.addLine(to: viewPoints[1])
+        boxPath.addLine(to: viewPoints[2])
+        boxPath.addLine(to: viewPoints[3])
+        boxPath.close()
+        arucoOverlayLayer.path = boxPath.cgPath
+
+        let center = CGPoint(
+            x: (viewPoints[0].x + viewPoints[1].x + viewPoints[2].x + viewPoints[3].x) * 0.25,
+            y: (viewPoints[0].y + viewPoints[1].y + viewPoints[2].y + viewPoints[3].y) * 0.25
+        )
+        let xEnd = CGPoint(
+            x: (viewPoints[0].x + viewPoints[1].x) * 0.5,
+            y: (viewPoints[0].y + viewPoints[1].y) * 0.5
+        )
+        let yEnd = CGPoint(
+            x: (viewPoints[0].x + viewPoints[3].x) * 0.5,
+            y: (viewPoints[0].y + viewPoints[3].y) * 0.5
+        )
+
+        let xPath = UIBezierPath()
+        xPath.move(to: center)
+        xPath.addLine(to: xEnd)
+        arucoXAxisLayer.path = xPath.cgPath
+
+        let yPath = UIBezierPath()
+        yPath.move(to: center)
+        yPath.addLine(to: yEnd)
+        arucoYAxisLayer.path = yPath.cgPath
+
+        let centerDotPath = UIBezierPath(arcCenter: center, radius: 4, startAngle: 0, endAngle: .pi * 2, clockwise: true)
+        arucoCenterLayer.path = centerDotPath.cgPath
+    }
+
+    private func clearArucoScreenOverlay() {
+        arucoOverlayLayer.path = nil
+        arucoXAxisLayer.path = nil
+        arucoYAxisLayer.path = nil
+        arucoCenterLayer.path = nil
+    }
+
+    private func clearArucoVisuals() {
+        markerVizNode?.isHidden = true
+        arucoDebugText = ""
+        isArucoMarkerDetected = false
+        clearArucoScreenOverlay()
+    }
+
+    private func createMarkerVizNode() -> SCNNode {
+        let root = SCNNode()
+        root.name = "arucoMarkerViz"
+
+        func unlitMat(_ color: UIColor) -> SCNMaterial {
+            let m = SCNMaterial()
+            m.diffuse.contents = color
+            m.lightingModel = .constant
+            m.isDoubleSided = true
+            m.writesToDepthBuffer = false
+            m.readsFromDepthBuffer = false
+            return m
+        }
+
+        let markerSize: CGFloat = 0.16  // 16cm marker
+
+        // Semi-transparent green filled plane on the marker surface (XY plane, Z=0)
+        let plane = SCNPlane(width: markerSize, height: markerSize)
+        plane.firstMaterial = unlitMat(UIColor(red: 0, green: 1, blue: 0, alpha: 0.3))
+        let planeNode = SCNNode(geometry: plane)
+        planeNode.renderingOrder = 100
+        root.addChildNode(planeNode)
+
+        // Bright green border — 4 edges using SCNPlane strips (visible from both sides)
+        let borderW: CGFloat = 0.006  // 6mm wide border
+        let borderMat = unlitMat(UIColor(red: 0, green: 1, blue: 0, alpha: 1.0))
+
+        // Top edge
+        let topPlane = SCNPlane(width: markerSize, height: borderW)
+        topPlane.firstMaterial = borderMat
+        let topNode = SCNNode(geometry: topPlane)
+        topNode.simdPosition = SIMD3<Float>(0, Float(markerSize / 2), 0.001)
+        topNode.renderingOrder = 101
+        root.addChildNode(topNode)
+
+        // Bottom edge
+        let bottomPlane = SCNPlane(width: markerSize, height: borderW)
+        bottomPlane.firstMaterial = borderMat
+        let bottomNode = SCNNode(geometry: bottomPlane)
+        bottomNode.simdPosition = SIMD3<Float>(0, Float(-markerSize / 2), 0.001)
+        bottomNode.renderingOrder = 101
+        root.addChildNode(bottomNode)
+
+        // Left edge
+        let leftPlane = SCNPlane(width: borderW, height: markerSize)
+        leftPlane.firstMaterial = borderMat
+        let leftNode = SCNNode(geometry: leftPlane)
+        leftNode.simdPosition = SIMD3<Float>(Float(-markerSize / 2), 0, 0.001)
+        leftNode.renderingOrder = 101
+        root.addChildNode(leftNode)
+
+        // Right edge
+        let rightPlane = SCNPlane(width: borderW, height: markerSize)
+        rightPlane.firstMaterial = borderMat
+        let rightNode = SCNNode(geometry: rightPlane)
+        rightNode.simdPosition = SIMD3<Float>(Float(markerSize / 2), 0, 0.001)
+        rightNode.renderingOrder = 101
+        root.addChildNode(rightNode)
+
+        // Coordinate axes — using cylinders for better visibility
+        let axisLen: Float = 0.10
+        let axisRadius: CGFloat = 0.003
+
+        // X axis — Red (along marker's X)
+        let xCyl = SCNCylinder(radius: axisRadius, height: CGFloat(axisLen))
+        xCyl.firstMaterial = unlitMat(.red)
+        let xNode = SCNNode(geometry: xCyl)
+        xNode.simdPosition = SIMD3<Float>(axisLen / 2, 0, 0)
+        xNode.eulerAngles.z = -.pi / 2  // rotate cylinder to lie along X
+        xNode.renderingOrder = 102
+        root.addChildNode(xNode)
+
+        // Y axis — Green
+        let yCyl = SCNCylinder(radius: axisRadius, height: CGFloat(axisLen))
+        yCyl.firstMaterial = unlitMat(UIColor(red: 0.2, green: 1.0, blue: 0.2, alpha: 1.0))
+        let yNode = SCNNode(geometry: yCyl)
+        yNode.simdPosition = SIMD3<Float>(0, axisLen / 2, 0)
+        yNode.renderingOrder = 102
+        root.addChildNode(yNode)
+
+        // Z axis — Blue (pointing out of marker surface)
+        let zCyl = SCNCylinder(radius: axisRadius, height: CGFloat(axisLen))
+        zCyl.firstMaterial = unlitMat(.blue)
+        let zNode = SCNNode(geometry: zCyl)
+        zNode.simdPosition = SIMD3<Float>(0, 0, axisLen / 2)
+        zNode.eulerAngles.x = .pi / 2  // rotate to lie along Z
+        zNode.renderingOrder = 102
+        root.addChildNode(zNode)
+
+        // Origin sphere
+        let sphere = SCNSphere(radius: 0.008)
+        sphere.firstMaterial = unlitMat(.white)
+        let sphereNode = SCNNode(geometry: sphere)
+        sphereNode.renderingOrder = 103
+        root.addChildNode(sphereNode)
+
+        return root
+    }
+
     // MARK: - FeasibleCap (lazy init on first base placement)
 
     private func initFeasibleCapIfNeeded() {
         guard !feasibleCapInitialized else { return }
-        feasibleCapInitialized = true
 
         guard let urdfURL = Bundle.main.url(forResource: "rm_75", withExtension: "urdf", subdirectory: "RM75") else {
             print("[FeasibleCap] URDF not found in bundle")
@@ -325,65 +743,336 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         let renderer = RobotRenderer(model: model)
         scnView.scene.rootNode.addChildNode(renderer.rootNode)
         self.robotRenderer = renderer
+        self.feasibleCapInitialized = true
+    }
+
+    private func startBasePlacement() {
+        baseTransformBeforePlacement = robotBasePlaced ? robotBaseTransform : nil
+        isClutchEngaged = false
+        robotBasePlaced = false
+        isPlacingBase = true
+        isPlacingBaseMode = true
+        hasPlacementPreview = false
+        pendingBaseTransform = nil
+        pendingBaseHitPosition = nil
+        pendingBaseYaw = nil
+        pendingBaseHeightOffset = 0
+        placementHeightOffsetMeters = 0
+
+        guard prepareRendererForPlacementPreview() else {
+            isPlacingBase = false
+            isPlacingBaseMode = false
+            if let previous = baseTransformBeforePlacement {
+                robotBaseTransform = previous
+                robotBasePlaced = true
+                robotRenderer?.setBaseTransform(previous)
+                robotRenderer?.show()
+                isGhostVisible = true
+            }
+            baseTransformBeforePlacement = nil
+            return
+        }
+
+        if isArucoPlacementMode {
+            // In ArUco mode, skip raycast; placement comes from per-frame native detection
+            print("[ArUco] Waiting for marker detection via native detector.")
+            return
+        }
+
+        let center = CGPoint(x: scnView.bounds.midX, y: scnView.bounds.midY)
+        _ = tryPreviewBase(at: center, cameraTransform: cameraTransform, logMiss: true)
+    }
+
+    private func confirmBasePlacement() {
+        guard isPlacingBase else { return }
+        guard let transform = pendingBaseTransform else {
+            print("[FeasibleCap] Confirm failed: no preview pose yet.")
+            return
+        }
+
+        robotBaseTransform = transform
+        robotBasePlaced = true
+        isPlacingBase = false
+        isPlacingBaseMode = false
+        hasPlacementPreview = false
+        pendingBaseTransform = nil
+        pendingBaseHitPosition = nil
+        pendingBaseYaw = nil
+        pendingBaseHeightOffset = 0
+        placementHeightOffsetMeters = 0
+        baseTransformBeforePlacement = nil
+        arucoMissCount = 0
+
+        robotRenderer?.setBaseTransform(transform)
+        // 以当前关节角（零位）显示，不做 IK
+        if let solver = ikSolver, let renderer = robotRenderer {
+            let fk = solver.forwardKinematics(previousJointAngles)
+            renderer.updateTransforms(fk)
+            renderer.setFeasibility(true)
+        }
+        isFeasible = true
+        robotRenderer?.show()
+        isGhostVisible = true
+        clearArucoVisuals()
+        print("[FeasibleCap] Base placement confirmed.")
+    }
+
+    private func cancelBasePlacement() {
+        guard isPlacingBase else { return }
+
+        isPlacingBase = false
+        isPlacingBaseMode = false
+        hasPlacementPreview = false
+        pendingBaseTransform = nil
+        pendingBaseHitPosition = nil
+        pendingBaseYaw = nil
+        pendingBaseHeightOffset = 0
+        placementHeightOffsetMeters = 0
+        isArucoPlacementMode = false
+        lastArucoPoseLogTimestamp = 0
+        arucoMissCount = 0
+        clearArucoVisuals()
+
+        if let previous = baseTransformBeforePlacement {
+            robotBaseTransform = previous
+            robotBasePlaced = true
+            robotRenderer?.setBaseTransform(previous)
+            robotRenderer?.show()
+            isGhostVisible = true
+            print("[FeasibleCap] Base placement canceled, restored previous base.")
+        } else {
+            robotBasePlaced = false
+            robotRenderer?.hide()
+            isGhostVisible = false
+            print("[FeasibleCap] Base placement canceled.")
+        }
+
+        baseTransformBeforePlacement = nil
+    }
+
+    private func rotatePlacementYaw(by delta: Float) {
+        guard isPlacingBase else { return }
+        guard let hitPos = pendingBaseHitPosition else { return }
+        let currentYaw = pendingBaseYaw ?? 0
+        let newYaw = currentYaw + delta
+        pendingBaseYaw = newYaw
+
+        let rotatedTransform = buildBaseTransform(hitPosition: hitPos, yaw: newYaw, heightOffset: pendingBaseHeightOffset)
+        pendingBaseTransform = rotatedTransform
+        robotRenderer?.setBaseTransform(rotatedTransform)
+        robotRenderer?.show()
+        isGhostVisible = true
+    }
+
+    private func adjustPlacementHeight(by delta: Float) {
+        guard isPlacingBase else { return }
+        guard let hitPos = pendingBaseHitPosition else { return }
+
+        let newOffset = max(-0.30, min(0.30, pendingBaseHeightOffset + delta))
+        pendingBaseHeightOffset = newOffset
+        placementHeightOffsetMeters = newOffset
+
+        let transform = buildBaseTransform(hitPosition: hitPos, yaw: pendingBaseYaw ?? 0, heightOffset: newOffset)
+        pendingBaseTransform = transform
+        robotRenderer?.setBaseTransform(transform)
+        robotRenderer?.show()
+        isGhostVisible = true
+    }
+
+    private func updatePlacementPreview(cameraTransform: simd_float4x4) {
+        guard isPlacingBase else { return }
+        // In ArUco mode, placement updates come from per-frame native detection
+        guard !isArucoPlacementMode else { return }
+        let center = CGPoint(x: scnView.bounds.midX, y: scnView.bounds.midY)
+        _ = tryPreviewBase(at: center, cameraTransform: cameraTransform, logMiss: false)
+    }
+
+    private func prepareRendererForPlacementPreview() -> Bool {
+        initFeasibleCapIfNeeded()
+        guard let solver = ikSolver,
+              let renderer = robotRenderer else {
+            print("[FeasibleCap] Initialization incomplete (solver/renderer missing).")
+            return false
+        }
+
+        let previewFK = solver.forwardKinematics(previousJointAngles)
+        renderer.updateTransforms(previewFK)
+        renderer.setFeasibility(true)
+        renderer.show()
+        isGhostVisible = true
+        return true
     }
 
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
         guard isPlacingBase else { return }
         let location = gesture.location(in: scnView)
+        _ = tryPreviewBase(at: location, cameraTransform: cameraTransform, logMiss: true)
+    }
 
-        guard let query = scnView.raycastQuery(from: location, allowing: .existingPlaneGeometry, alignment: .horizontal) else { return }
-        let results = scnView.session.raycast(query)
-        guard let result = results.first else { return }
+    @discardableResult
+    private func tryPreviewBase(at location: CGPoint, cameraTransform: simd_float4x4, logMiss: Bool) -> Bool {
+        guard isPlacingBase else { return false }
 
-        // Initialize FeasibleCap on first placement
-        initFeasibleCapIfNeeded()
-        guard robotModel != nil else { return }
-
-        robotBaseTransform = result.worldTransform
-        robotBasePlaced = true
-        isPlacingBase = false
-
-        // Show ghost at zero config
-        let zeroFK = ikSolver?.forwardKinematics(previousJointAngles)
-        if let fk = zeroFK {
-            robotRenderer?.updateTransforms(fk)
+        // Try robust placement in descending confidence order.
+        let targets: [ARRaycastQuery.Target] = [.existingPlaneGeometry, .existingPlaneInfinite, .estimatedPlane]
+        var raycastResult: ARRaycastResult?
+        for target in targets {
+            guard let query = scnView.raycastQuery(from: location, allowing: target, alignment: .horizontal) else { continue }
+            if let hit = scnView.session.raycast(query).first {
+                raycastResult = hit
+                break
+            }
         }
-        robotRenderer?.setBaseTransform(robotBaseTransform)
+
+        guard let result = raycastResult else {
+            if logMiss {
+                print("[FeasibleCap] Base placement miss: no horizontal surface hit, move phone and tap again.")
+            }
+            return false
+        }
+
+        guard prepareRendererForPlacementPreview() else {
+            return false
+        }
+
+        let hitPos = SIMD3<Float>(
+            result.worldTransform.columns.3.x,
+            result.worldTransform.columns.3.y,
+            result.worldTransform.columns.3.z
+        )
+        pendingBaseHitPosition = hitPos
+        if pendingBaseYaw == nil {
+            let camPos = SIMD3<Float>(
+                cameraTransform.columns.3.x,
+                cameraTransform.columns.3.y,
+                cameraTransform.columns.3.z
+            )
+            var toCamera = camPos - hitPos
+            toCamera.y = 0
+            if length(toCamera) < 1e-4 {
+                toCamera = SIMD3<Float>(0, 0, -1)
+            } else {
+                toCamera = normalize(toCamera)
+            }
+            // Default to keep the arm on the user-back side rather than facing the camera.
+            pendingBaseYaw = atan2(toCamera.x, toCamera.z) + Float.pi
+        }
+
+        let transform = buildBaseTransform(hitPosition: hitPos, yaw: pendingBaseYaw ?? 0, heightOffset: pendingBaseHeightOffset)
+        pendingBaseTransform = transform
+        hasPlacementPreview = true
+        robotRenderer?.setBaseTransform(transform)
         robotRenderer?.show()
         isGhostVisible = true
         isFeasible = true
         robotRenderer?.setFeasibility(true)
+        return true
+    }
+
+    private func buildBaseTransform(hitPosition: SIMD3<Float>, yaw: Float, heightOffset: Float) -> simd_float4x4 {
+        let position = SIMD3<Float>(hitPosition.x, hitPosition.y + heightOffset, hitPosition.z)
+        let translation = makeTransform(xyz: position, rpy: .zero)
+        let yawRot = makeTransform(xyz: .zero, rpy: SIMD3<Float>(0, yaw, 0))
+        let zUpToYUp = makeTransform(xyz: .zero, rpy: SIMD3<Float>(-Float.pi * 0.5, 0, 0))
+        return translation * yawRot * zUpToYUp
+    }
+
+    private func beginFrameProcessing() -> Bool {
+        frameProcessingLock.lock()
+        defer { frameProcessingLock.unlock() }
+        if isFrameProcessing {
+            return false
+        }
+        isFrameProcessing = true
+        return true
+    }
+
+    private func endFrameProcessing() {
+        frameProcessingLock.lock()
+        isFrameProcessing = false
+        frameProcessingLock.unlock()
+    }
+
+    private func setJointAngles(_ angles: [Float]) {
+        guard robotBasePlaced,
+              let solver = ikSolver,
+              let renderer = robotRenderer else { return }
+        previousJointAngles = angles
+        let fk = solver.forwardKinematics(angles)
+        renderer.updateTransforms(fk)
+        renderer.setFeasibility(true)
+        isFeasible = true
+        renderer.show()
+        isGhostVisible = true
     }
 
     func updateGhostArm(cameraTransform: simd_float4x4, timestamp: Double) {
         guard isClutchEngaged, robotBasePlaced,
               let solver = ikSolver,
               let renderer = robotRenderer,
-              let checker = feasibilityChecker else { return }
+              let checker = feasibilityChecker,
+              let cameraRef = clutchCameraRef,
+              let eeRef = clutchEERef else { return }
 
-        // Target pose in robot base frame
-        let targetPose = robotBaseTransform.inverse * cameraTransform * camToTCPOffset
+        // 手机位移增量（世界坐标系）
+        let dp_world = SIMD3<Float>(
+            cameraTransform.columns.3.x - cameraRef.columns.3.x,
+            cameraTransform.columns.3.y - cameraRef.columns.3.y,
+            cameraTransform.columns.3.z - cameraRef.columns.3.z
+        )
 
-        // Solve IK with warm start
+        // 基座逆变换的旋转部分（3x3）
+        let baseInv = robotBaseTransform.inverse
+        let baseRot3 = simd_float3x3(
+            SIMD3(baseInv.columns.0.x, baseInv.columns.0.y, baseInv.columns.0.z),
+            SIMD3(baseInv.columns.1.x, baseInv.columns.1.y, baseInv.columns.1.z),
+            SIMD3(baseInv.columns.2.x, baseInv.columns.2.y, baseInv.columns.2.z)
+        )
+        let dp_base = baseRot3 * dp_world
+
+        // 旋转增量：dR_world = curRot * refRot^T, 转到基座坐标系
+        let refRot3 = simd_float3x3(
+            SIMD3(cameraRef.columns.0.x, cameraRef.columns.0.y, cameraRef.columns.0.z),
+            SIMD3(cameraRef.columns.1.x, cameraRef.columns.1.y, cameraRef.columns.1.z),
+            SIMD3(cameraRef.columns.2.x, cameraRef.columns.2.y, cameraRef.columns.2.z)
+        )
+        let curRot3 = simd_float3x3(
+            SIMD3(cameraTransform.columns.0.x, cameraTransform.columns.0.y, cameraTransform.columns.0.z),
+            SIMD3(cameraTransform.columns.1.x, cameraTransform.columns.1.y, cameraTransform.columns.1.z),
+            SIMD3(cameraTransform.columns.2.x, cameraTransform.columns.2.y, cameraTransform.columns.2.z)
+        )
+        let dR_world = curRot3 * refRot3.transpose
+        let dR_base = baseRot3 * dR_world * baseRot3.transpose
+
+        // 构建目标位姿 = eeRef 叠加增量
+        let eeRefRot3 = simd_float3x3(
+            SIMD3(eeRef.columns.0.x, eeRef.columns.0.y, eeRef.columns.0.z),
+            SIMD3(eeRef.columns.1.x, eeRef.columns.1.y, eeRef.columns.1.z),
+            SIMD3(eeRef.columns.2.x, eeRef.columns.2.y, eeRef.columns.2.z)
+        )
+        let targetRot = dR_base * eeRefRot3
+        let eeRefPos = SIMD3<Float>(eeRef.columns.3.x, eeRef.columns.3.y, eeRef.columns.3.z)
+        let targetPos = eeRefPos + dp_base
+
+        var targetPose = matrix_identity_float4x4
+        targetPose.columns.0 = SIMD4(targetRot.columns.0, 0)
+        targetPose.columns.1 = SIMD4(targetRot.columns.1, 0)
+        targetPose.columns.2 = SIMD4(targetRot.columns.2, 0)
+        targetPose.columns.3 = SIMD4(targetPos, 1)
+
+        // IK 求解
         let ikResult = solver.solve(target: targetPose, warmStart: previousJointAngles)
-
-        // Update ghost transforms
         renderer.updateTransforms(ikResult.fkResult)
 
-        // Evaluate feasibility
+        // 可行性评估
         let result = checker.evaluate(ikResult: ikResult, timestamp: timestamp)
         let newFeasible = result.feasible
-
-        // State transition handling
         if newFeasible != isFeasible {
             isFeasible = newFeasible
             renderer.setFeasibility(newFeasible)
             hapticManager?.transientPulse()
-            if newFeasible {
-                hapticManager?.stopWarning()
-            } else {
-                hapticManager?.startWarning()
-            }
+            if newFeasible { hapticManager?.stopWarning() }
+            else { hapticManager?.startWarning() }
         }
 
         previousJointAngles = ikResult.jointAngles

@@ -7,7 +7,13 @@ enum ARAction {
     case resetOrigin
     // FeasibleCap
     case startBasePlacement
+    case startArucoPlacement
+    case confirmBasePlacement
+    case cancelBasePlacement
+    case rotateBaseYaw(Float)
+    case adjustBaseHeight(Float)
     case toggleClutch
-    case calibrateCamToTCP
+    case setZeroPose
+    case setHomePose
     case resetGhostArm
 }

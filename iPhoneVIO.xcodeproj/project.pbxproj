@@ -34,6 +34,10 @@
 		8F187EB51CF2B34D2CAC0695 /* FeasibilityChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */; };
 		A7E7AEADA62E99660BE7A116 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */; };
 		BB07B84B316BB9667BCC370F /* RM75 in Resources */ = {isa = PBXBuildFile; fileRef = C8965478D5912ACA61B0ED44 /* RM75 */; };
+		D1A2B3C4E5F6A7B800000001 /* gripper in Resources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B800000002 /* gripper */; };
+		A1B2C3D400000002 /* ArucoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000001 /* ArucoDetector.swift */; };
+		A1B2C3D400000004 /* ArucoDictionary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000003 /* ArucoDictionary.swift */; };
+		A1B2C3D400000006 /* PnPSolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000005 /* PnPSolver.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,6 +95,10 @@
 		F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeasibilityChecker.swift; sourceTree = "<group>"; };
 		C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		C8965478D5912ACA61B0ED44 /* RM75 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RM75; path = Resources/RM75; sourceTree = "<group>"; };
+		D1A2B3C4E5F6A7B800000002 /* gripper */ = {isa = PBXFileReference; lastKnownFileType = folder; name = gripper; path = Resources/gripper; sourceTree = "<group>"; };
+		A1B2C3D400000001 /* ArucoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArucoDetector.swift; sourceTree = "<group>"; };
+		A1B2C3D400000003 /* ArucoDictionary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArucoDictionary.swift; sourceTree = "<group>"; };
+		A1B2C3D400000005 /* PnPSolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PnPSolver.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,7 +173,11 @@
 				77296FC2FAEC2FF0A12C445F /* RobotRenderer.swift */,
 				F071AAE3715F594F5F34D5D6 /* FeasibilityChecker.swift */,
 				C89BB8FCF2F95C5EFDC39F81 /* HapticManager.swift */,
+				A1B2C3D400000001 /* ArucoDetector.swift */,
+				A1B2C3D400000003 /* ArucoDictionary.swift */,
+				A1B2C3D400000005 /* PnPSolver.swift */,
 				C8965478D5912ACA61B0ED44 /* RM75 */,
+				D1A2B3C4E5F6A7B800000002 /* gripper */,
 				1F6E8FBD2BE89BAD00DD0DFA /* Assets.xcassets */,
 				1F6E8FBF2BE89BAD00DD0DFA /* Preview Content */,
 			);
@@ -330,6 +342,7 @@
 				1F6E8FC12BE89BAD00DD0DFA /* Preview Assets.xcassets in Resources */,
 				1F6E8FBE2BE89BAD00DD0DFA /* Assets.xcassets in Resources */,
 				BB07B84B316BB9667BCC370F /* RM75 in Resources */,
+				D1A2B3C4E5F6A7B800000001 /* gripper in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -441,6 +454,9 @@
 				A00DDADDAC75BB46B8BF547D /* RobotRenderer.swift in Sources */,
 				8F187EB51CF2B34D2CAC0695 /* FeasibilityChecker.swift in Sources */,
 				A7E7AEADA62E99660BE7A116 /* HapticManager.swift in Sources */,
+				A1B2C3D400000002 /* ArucoDetector.swift in Sources */,
+				A1B2C3D400000004 /* ArucoDictionary.swift in Sources */,
+				A1B2C3D400000006 /* PnPSolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

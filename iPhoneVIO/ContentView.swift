@@ -515,23 +515,232 @@ struct FeasibleCapControlPanel: View {
                     .foregroundColor(.white)
             }
 
-            // Place Base
-            Button {
-                ARManager.shared.actionStream.send(.startBasePlacement)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "location.circle")
-                        .font(.system(size: 11))
-                    Text(viewController.robotBasePlaced ? "重置基座" : "放置基座")
-                        .font(.system(size: 11, weight: .medium).monospaced())
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.16))
-                .cornerRadius(6)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(viewController.isPlacingBaseMode ? Color.yellow : (viewController.robotBasePlaced ? Color.green : Color.gray))
+                    .frame(width: 10, height: 10)
+                Text(viewController.isPlacingBaseMode ? "基座预览中" : (viewController.robotBasePlaced ? "基座已放置" : "基座未放置"))
+                    .font(.system(size: 11, weight: .medium).monospaced())
+                    .foregroundColor(.white)
             }
-            .buttonStyle(.plain)
+
+            // Place Base: ArUco tag or manual
+            HStack(spacing: 6) {
+                Button {
+                    ARManager.shared.actionStream.send(.startArucoPlacement)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "qrcode.viewfinder")
+                            .font(.system(size: 11))
+                        Text("标签定位")
+                            .font(.system(size: 11, weight: .medium).monospaced())
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.45))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    ARManager.shared.actionStream.send(.startBasePlacement)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.circle")
+                            .font(.system(size: 11))
+                        Text("手动放置")
+                            .font(.system(size: 11, weight: .medium).monospaced())
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.16))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // ArUco detection status (shown during ArUco placement mode)
+            if viewController.isPlacingBaseMode {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(viewController.isArucoMarkerDetected ? Color.green : Color.yellow)
+                        .frame(width: 8, height: 8)
+                    Text(viewController.isArucoMarkerDetected ? "标签已检测·实时跟踪" : "搜索标签中...")
+                        .font(.system(size: 11, weight: .medium).monospaced())
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                if !viewController.arucoDebugText.isEmpty {
+                    Text(viewController.arucoDebugText)
+                        .font(.system(size: 10).monospaced())
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineLimit(2)
+                }
+            }
+
+            if viewController.isPlacingBaseMode {
+                HStack(spacing: 6) {
+                    Button {
+                        ARManager.shared.actionStream.send(.rotateBaseYaw(Float.pi / 12))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rotate.left")
+                                .font(.system(size: 11))
+                            Text("左转15°")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.16))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewController.hasPlacementPreview)
+                    .opacity(viewController.hasPlacementPreview ? 1.0 : 0.4)
+
+                    Button {
+                        ARManager.shared.actionStream.send(.rotateBaseYaw(-Float.pi / 12))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rotate.right")
+                                .font(.system(size: 11))
+                            Text("右转15°")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.16))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewController.hasPlacementPreview)
+                    .opacity(viewController.hasPlacementPreview ? 1.0 : 0.4)
+                }
+
+                HStack(spacing: 6) {
+                    Button {
+                        ARManager.shared.actionStream.send(.adjustBaseHeight(0.01))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 11))
+                            Text("上移1cm")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.16))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewController.hasPlacementPreview)
+                    .opacity(viewController.hasPlacementPreview ? 1.0 : 0.4)
+
+                    Button {
+                        ARManager.shared.actionStream.send(.adjustBaseHeight(-0.01))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 11))
+                            Text("下移1cm")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.16))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewController.hasPlacementPreview)
+                    .opacity(viewController.hasPlacementPreview ? 1.0 : 0.4)
+                }
+
+                Text(String(format: "高度偏移: %.1f cm", viewController.placementHeightOffsetMeters * 100))
+                    .font(.system(size: 11, weight: .medium).monospaced())
+                    .foregroundColor(.white.opacity(0.9))
+
+                HStack(spacing: 6) {
+                    Button {
+                        ARManager.shared.actionStream.send(.confirmBasePlacement)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 11))
+                            Text("确认放置")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.4))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewController.hasPlacementPreview)
+                    .opacity(viewController.hasPlacementPreview ? 1.0 : 0.4)
+
+                    Button {
+                        ARManager.shared.actionStream.send(.cancelBasePlacement)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark.circle")
+                                .font(.system(size: 11))
+                            Text("取消")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.red.opacity(0.35))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // 姿态设置按钮（放置确认后可用）
+            if viewController.robotBasePlaced && !viewController.isPlacingBaseMode {
+                HStack(spacing: 6) {
+                    Button {
+                        ARManager.shared.actionStream.send(.setZeroPose)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.counterclockwise.circle")
+                                .font(.system(size: 11))
+                            Text("零位")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.16))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        ARManager.shared.actionStream.send(.setHomePose)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "house.circle")
+                                .font(.system(size: 11))
+                            Text("Home")
+                                .font(.system(size: 11, weight: .medium).monospaced())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.4))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
             // Clutch toggle
             Button {
@@ -550,8 +759,8 @@ struct FeasibleCapControlPanel: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
-            .disabled(!viewController.robotBasePlaced)
-            .opacity(viewController.robotBasePlaced ? 1.0 : 0.4)
+            .disabled(!viewController.robotBasePlaced || viewController.isPlacingBaseMode)
+            .opacity((viewController.robotBasePlaced && !viewController.isPlacingBaseMode) ? 1.0 : 0.4)
 
             // Reset
             Button {
@@ -570,8 +779,8 @@ struct FeasibleCapControlPanel: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
-            .disabled(!viewController.isGhostVisible)
-            .opacity(viewController.isGhostVisible ? 1.0 : 0.4)
+            .disabled(!viewController.isGhostVisible && !viewController.isPlacingBaseMode)
+            .opacity((viewController.isGhostVisible || viewController.isPlacingBaseMode) ? 1.0 : 0.4)
         }
         .padding(10)
         .background(Color.black.opacity(0.6))

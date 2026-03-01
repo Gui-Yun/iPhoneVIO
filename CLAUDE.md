@@ -1,100 +1,117 @@
-# CLAUDE.md
+# iPhoneVIO + FeasibleCap
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-**iOS ARKit app that streams Visual Inertial Odometry (VIO) pose data via Socket.IO to a Python server.**
+iOS ARKit app that streams VIO pose data (pose + JPEG) via TCP to a Python/Rust server, and overlays a real-time "ghost arm" AR visualization for robot teleoperation feasibility checking.
 
 ## Tech Stack
 
-- **iOS**: Swift 5.0, SwiftUI, ARKit, RealityKit, Combine
-- **Minimum iOS**: 17.4 (deployment target in project.pbxproj, though Podfile specifies 17.2)
-- **Dependencies**: CocoaPods with Socket.IO-Client-Swift ~> 16.1.0 (brings in Starscream)
-- **Server**: Python with python-socketio, eventlet, numpy
+- **iOS**: Swift 5.0, SwiftUI, ARKit, ARSCNView (SceneKit), Model I/O, Accelerate, CoreHaptics, Network.framework
+- **Minimum iOS**: 17.2 (Podfile) / 17.4 (project.pbxproj deployment target)
+- **Dependencies**: CocoaPods present but currently no pods — Network.framework is built-in
+- **Server**: Python with python-socketio/eventlet (legacy `socketio_server.py`); primary server is rapid_driver (external Rust/axum binary)
 
 ## Project Structure
 
 ```
 iPhoneVIO/
-├── iPhoneVIO/               # iOS app source
-│   ├── ContentView.swift    # SwiftUI UI with IP/port config
-│   ├── ARSessionManager.swift  # ViewController: ARSession + ARSessionDelegate
-│   ├── SocketClient.swift   # Socket.IO client for data streaming
-│   ├── ARManager.swift      # Singleton with action stream (Combine)
-│   └── ARAction.swift       # Action enum for IP/port updates
-├── socketio_server.py       # Python server (port 5555)
-├── Podfile                  # CocoaPods dependencies
-└── iPhoneVIO.xcworkspace    # MUST use this (not .xcodeproj)
+├── iPhoneVIO/                  # iOS app source
+│   ├── ContentView.swift       # SwiftUI root: AR view + all overlay panels
+│   ├── ARSessionManager.swift  # UIViewController: ARSCNView, ARSessionDelegate, FeasibleCap orchestration
+│   ├── ARManager.swift         # Singleton Combine action stream
+│   ├── ARAction.swift          # Action enum (connect, disconnect, FeasibleCap actions)
+│   ├── NetworkClient.swift     # Raw TCP client: binary frame protocol (8-byte header + payload)
+│   ├── BonjourManager.swift    # mDNS: advertises _iphonevio._tcp, discovers _vioserver._tcp + _rapiddriver._tcp
+│   ├── RecordingController.swift  # HTTP client for rapid_driver recording/replay/device control API
+│   ├── DataManagementController.swift  # HTTP client for recordings CRUD + replay
+│   ├── DataManagementView.swift  # SwiftUI: MCAP file browser, delete, replay
+│   ├── HapticManager.swift     # CoreHaptics: continuous warning + transient pulse
+│   ├── OrientationCubeView.swift  # Live SCNView orientation indicator (top-right HUD)
+│   ├── RobotModel.swift        # Value types: JointDef, LinkDef, RobotKinematics, makeTransform()
+│   ├── URDFParser.swift        # SAX XML parser → RobotKinematics
+│   ├── IKSolver.swift          # Damped Least-Squares IK + FK (7-DoF RM75, uses Accelerate sgesv_)
+│   ├── RobotRenderer.swift     # SceneKit ghost arm: STL mesh loading, FK transform updates, feasibility coloring
+│   ├── FeasibilityChecker.swift  # Per-frame: IK convergence + joint limits + velocity limits
+│   └── Resources/
+│       ├── RM75/               # RM75 robot: rm_75.urdf + link1-7.STL meshes
+│       └── gripper/            # Gripper: base_link.stl, gripper_left_1_1.stl, gripper_right_1_1.stl
+├── iPhoneVIOTests/             # Unit tests (currently out of sync with model fields — fix before relying on them)
+├── socketio_server.py          # Legacy Python server (Socket.IO, port 5555)
+├── docs/
+│   ├── feasiblecap_feature_gap.md   # Feature roadmap vs paper (Chinese)
+│   └── recording_management_api.md  # rapid_driver HTTP API spec (Chinese)
+├── Podfile
+└── iPhoneVIO.xcworkspace       # MUST use this (not .xcodeproj)
 ```
 
-## Data Flow
+## Key Subsystems
 
-```
-ARKit frame update → ViewController.session(_:didUpdate:)
-  → DataPacket(4x4 transform matrix + timestamp)
-  → toBytes() (column-major float[16] + double timestamp)
-  → base64 encode
-  → Socket.IO emit("update", data)
-  → Python server decodes (transposes matrix to row-major)
-```
+### Data Streaming
+ARKit frame → `ViewController.session(_:didUpdate:)` → JPEG compress (background queue) → `FramePacket.toBytes()` → `NetworkClient.sendFrame()` → TCP binary stream.
 
-**Important**: Swift stores simd_float4x4 in column-major order. Python server transposes to row-major.
+Binary frame format: `[8B header: 4B payload_len + 1B msg_type + 3B reserved] [4B jpeg_size] [64B transform column-major float32×16] [8B device_ts] [8B wall_clock] [jpeg_data]`.
+
+Swift `simd_float4x4` is column-major. Python server transposes to row-major on decode.
+
+### Network Discovery
+`BonjourManager` advertises `_iphonevio._tcp` (so rapid_driver finds the phone) and browses for `_vioserver._tcp` (auto-connect for data streaming) and `_rapiddriver._tcp` (HTTP control API for recording). Auto-reconnect on disconnect is handled in `ContentView`.
+
+### FeasibleCap (Ghost Arm)
+Lazy-initialized on first `.startBasePlacement` action. Per-frame pipeline (60 Hz, only when clutch engaged):
+1. `IKSolver.solve()` — DLS IK with warm start, Accelerate `sgesv_` for the 6×6 linear solve
+2. `RobotRenderer.updateTransforms()` — apply FK link transforms to SceneKit nodes
+3. `FeasibilityChecker.evaluate()` — IK convergence + joint position limits + velocity limits
+4. `HapticManager` — continuous haptic on infeasible, transient pulse on state transition
+
+Ghost arm is green (feasible) or red (infeasible). Robot is RM75 (7-DoF) with a fixed gripper on Link7.
+
+### Recording Management
+`RecordingController` polls `rapid_driver` HTTP API every 2 s for device ready status. Recording start/stop and replay are triggered via POST. See `docs/recording_management_api.md` for the full API spec.
 
 ## Essential Commands
 
-### iOS App
 ```bash
-# Install dependencies (required after git clone)
+# Install CocoaPods (required after git clone even if no pods are active)
 pod install
 
-# Open project (MUST use workspace due to CocoaPods)
+# Open project — MUST use workspace
 open iPhoneVIO.xcworkspace
 
-# Build from command line
+# Build for device
 xcodebuild -workspace iPhoneVIO.xcworkspace -scheme iPhoneVIO -sdk iphoneos build
 
-# Run tests
+# Run unit tests (note: some tests are out of sync with current model fields)
 xcodebuild -workspace iPhoneVIO.xcworkspace -scheme iPhoneVIO test
-```
 
-### Python Server
-```bash
-# Setup venv (Python 3.11 used in project)
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
+# Legacy Python server (Socket.IO, port 5555)
+python3 -m venv .venv && source .venv/bin/activate
 pip install python-socketio eventlet numpy
-
-# Run server (listens on 0.0.0.0:5555)
 python socketio_server.py
 ```
 
 ## Critical Constraints
 
-1. **No Simulator Support**: ARKit requires a real iOS device
-2. **Always Use .xcworkspace**: Due to CocoaPods integration
-3. **Camera Permissions**: App requires camera access for ARKit
-4. **Network**: iOS device and Python server must be on same network
-5. **Default Server**: App defaults to 192.168.123.18:5555 (configurable in UI)
+- **No simulator**: ARKit requires a real iOS device
+- **Always use `.xcworkspace`**: CocoaPods integration
+- **Landscape only**: `ViewController` locks to landscape
+- **FeasibleCap requires horizontal surface**: base placement uses ARKit plane detection raycast
+- **STL scale detection**: `RobotRenderer` auto-detects mm vs m from bounding box (max dimension >100 → scale ×0.001). Gripper meshes are always treated as mm.
+- **URDF parsing**: uses `Foundation.XMLParser` (SAX). `XMLDocument` is not available on iOS.
 
 ## Architecture Notes
 
-- **ViewController** (ARSessionManager.swift) is both UIViewController and ARSessionDelegate
-- **ARManager.shared** provides a Combine-based action stream for IP/port updates
-- **SocketClient** manages connection lifecycle and data serialization
-- **ContentView** provides SwiftUI UI with ARViewContainer (UIViewControllerRepresentable)
+- `ViewController` (ARSessionManager.swift) owns `ARSCNView`, the AR session, and all FeasibleCap state
+- `ARManager.shared` is a Combine `PassthroughSubject` action bus; UI sends actions, `ViewController` reacts
+- FeasibleCap components (`IKSolver`, `RobotRenderer`, `FeasibilityChecker`, `HapticManager`) are lazily created on first base placement — no startup cost when the feature is unused
+- `RobotRenderer.rootNode` is added directly to `scnView.scene.rootNode`
+- `camToTCPOffset` (`simd_float4x4`) captures the camera→TCP extrinsic; updated via `.calibrateCamToTCP` action
+- Protocol versioning: `NetworkClient` message types are `0x00` (sessionMetadata JSON) and `0x01` (frameData binary). A future `0x02` type for feasibility metadata is planned — see `docs/feasiblecap_feature_gap.md` Feature 10 for the wire format
 
 ## Verification
 
-After changes to iOS app:
-1. Build succeeds in Xcode
-2. App runs on physical device
-3. ARKit session starts (camera view visible)
-4. Socket.IO connects to Python server
-5. Server logs show incoming pose data with FPS
+After iOS changes:
+1. Build succeeds (no simulator — requires a physical device target in Xcode)
+2. FeasibleCap: base placement finds a horizontal surface, ghost arm appears, clutch toggle works, haptic fires on feasibility state change
+3. Data stream: mDNS discovers server, green status dot, server logs show incoming frames
 
-After changes to Python server:
-1. Server starts on port 5555
-2. Accepts Socket.IO connections
-3. Decodes base64 data successfully
-4. Prints translation and FPS
+After Python server changes:
+1. `python socketio_server.py` starts on port 5555
+2. Server logs show translation and FPS on each received frame
