@@ -755,6 +755,30 @@ struct FeasibleCapControlPanel: View {
                         .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
+
+                    Button {
+                        ARManager.shared.actionStream.send(.correctToCamera)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "scope")
+                                .font(.system(size: 11))
+                            if viewController.distanceToEE >= 0 && viewController.angleToEE >= 0 {
+                                Text(String(format: "矫正 %.2fm %.0f°", viewController.distanceToEE, viewController.angleToEE))
+                                    .font(.system(size: 11, weight: .medium).monospaced())
+                            } else {
+                                Text("矫正")
+                                    .font(.system(size: 11, weight: .medium).monospaced())
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.4))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewController.isClutchEngaged)
+                    .opacity(viewController.isClutchEngaged ? 0.4 : 1.0)
                 }
             }
 

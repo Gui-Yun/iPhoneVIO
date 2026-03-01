@@ -52,6 +52,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     @Published var placementHeightOffsetMeters: Float = 0
     @Published var isArucoMarkerDetected = false
     @Published var arucoDebugText: String = ""
+    @Published var distanceToEE: Float = -1  // <0 means unavailable
+    @Published var angleToEE: Float = -1    // degrees, <0 means unavailable
 
     private var isArucoPlacementMode = false
     private var arucoDetector: ArucoDetector?
@@ -289,6 +291,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                         self.clutchCameraRef = nil
                         self.clutchEERef = nil
                         self.previousJointAngles = Array(repeating: 0, count: 7)
+                        self.distanceToEE = -1
+                        self.angleToEE = -1
                         self.isArucoPlacementMode = false
                         self.isArucoMarkerDetected = false
                         self.lastArucoPoseLogTimestamp = 0
@@ -296,6 +300,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                         self.clearArucoVisuals()
                         self.feasibilityChecker?.reset()
                         self.hapticManager?.stopWarning()
+                    case .correctToCamera:
+                        self?.correctGhostArmToCamera()
                 }
             }
             .store(in: &cancellables)
@@ -394,6 +400,9 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         }
 
         updatePlacementPreview(cameraTransform: transform)
+
+        // Update distance from camera to EE (for "correct" button)
+        updateDistanceToEE(cameraTransform: transform)
 
         // FeasibleCap ghost arm update
         updateGhostArm(cameraTransform: transform, timestamp: timestamp)
@@ -1012,6 +1021,76 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         feasibilityState = .feasible
         renderer.show()
         isGhostVisible = true
+    }
+
+    private func updateDistanceToEE(cameraTransform cam: simd_float4x4) {
+        guard robotBasePlaced, !isClutchEngaged,
+              let solver = ikSolver else {
+            distanceToEE = -1
+            angleToEE = -1
+            return
+        }
+        let fk = solver.forwardKinematics(previousJointAngles)
+        // EE pose is in base frame → convert to world frame
+        let eeWorld = robotBaseTransform * fk.eePose
+        let dx = cam.columns.3.x - eeWorld.columns.3.x
+        let dy = cam.columns.3.y - eeWorld.columns.3.y
+        let dz = cam.columns.3.z - eeWorld.columns.3.z
+        distanceToEE = sqrtf(dx * dx + dy * dy + dz * dz)
+
+        // Rotation difference: use corrected camera (180° Y + -90° Z + 45° X bracket) to match gripper
+        let bracketAngle: Float = 45 * .pi / 180
+        let cB = cosf(bracketAngle)
+        let sB = sinf(bracketAngle)
+        let rc0Raw = SIMD3(-cam.columns.1.x, -cam.columns.1.y, -cam.columns.1.z)
+        let rc1 = SIMD3(-cam.columns.0.x, -cam.columns.0.y, -cam.columns.0.z)
+        let rc2Raw = SIMD3(-cam.columns.2.x, -cam.columns.2.y, -cam.columns.2.z)
+        let rc0 = rc0Raw * cB + rc2Raw * sB
+        let rc2 = -rc0Raw * sB + rc2Raw * cB
+        let camRot = simd_float3x3(rc0, rc1, rc2)
+        let eeRot = simd_float3x3(
+            SIMD3(eeWorld.columns.0.x, eeWorld.columns.0.y, eeWorld.columns.0.z),
+            SIMD3(eeWorld.columns.1.x, eeWorld.columns.1.y, eeWorld.columns.1.z),
+            SIMD3(eeWorld.columns.2.x, eeWorld.columns.2.y, eeWorld.columns.2.z)
+        )
+        let dR = camRot * eeRot.transpose
+        let trace = dR.columns.0.x + dR.columns.1.y + dR.columns.2.z
+        let cosAngle = min(max((trace - 1) / 2, -1), 1)
+        angleToEE = acosf(cosAngle) * 180 / .pi
+    }
+
+    func correctGhostArmToCamera() {
+        guard robotBasePlaced, !isClutchEngaged,
+              let solver = ikSolver,
+              let renderer = robotRenderer,
+              let checker = feasibilityChecker else { return }
+
+        // Camera→EE convention: 180° Y flip + (-90°) Z rotation
+        // Combined: col0 = -cam.col1, col1 = -cam.col0, col2 = -cam.col2
+        var camCorrected = cameraTransform
+        camCorrected.columns.0 = -cameraTransform.columns.1
+        camCorrected.columns.1 = -cameraTransform.columns.0
+        camCorrected.columns.2 = -cameraTransform.columns.2
+        // Compensate camera bracket: camera is pitched down 45° → right-multiply R_y(+45°)
+        let a: Float = 45 * .pi / 180
+        let cosA = cosf(a)
+        let sinA = sinf(a)
+        // R_y mixes X and Z columns: new_col0 = col0*cos + col2*sin, new_col2 = -col0*sin + col2*cos
+        let c0 = camCorrected.columns.0
+        let c2 = camCorrected.columns.2
+        camCorrected.columns.0 = c0 * cosA + c2 * sinA
+        camCorrected.columns.2 = -c0 * sinA + c2 * cosA
+        // Camera pose in base frame → IK target
+        let targetEE_base = robotBaseTransform.inverse * camCorrected
+
+        let ikResult = solver.solve(target: targetEE_base, warmStart: previousJointAngles)
+        previousJointAngles = ikResult.jointAngles
+        renderer.updateTransforms(ikResult.fkResult)
+
+        let result = checker.evaluate(ikResult: ikResult, timestamp: CACurrentMediaTime())
+        let newState = result.state
+        feasibilityState = newState
+        renderer.setFeasibilityState(newState)
     }
 
     func updateGhostArm(cameraTransform: simd_float4x4, timestamp: Double) {

@@ -16,4 +16,5 @@ enum ARAction {
     case setZeroPose
     case setHomePose
     case resetGhostArm
+    case correctToCamera
 }
