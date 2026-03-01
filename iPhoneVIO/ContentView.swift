@@ -531,6 +531,12 @@ struct FeasibleCapControlPanel: View {
                     .foregroundColor(.white)
             }
 
+            if !viewController.feasibilityReason.isEmpty {
+                Text(viewController.feasibilityReason)
+                    .font(.system(size: 10).monospaced())
+                    .foregroundColor(.white.opacity(0.7))
+            }
+
             HStack(spacing: 6) {
                 Circle()
                     .fill(viewController.isPlacingBaseMode ? Color.yellow : (viewController.robotBasePlaced ? Color.green : Color.gray))

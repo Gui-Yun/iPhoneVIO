@@ -46,6 +46,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     @Published var isClutchEngaged = false
     @Published var isGhostVisible = false
     @Published var feasibilityState: FeasibilityState = .feasible
+    @Published var feasibilityReason: String = ""
     @Published var robotBasePlaced = false
     @Published var isPlacingBaseMode = false
     @Published var hasPlacementPreview = false
@@ -1090,6 +1091,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         let result = checker.evaluate(ikResult: ikResult, timestamp: CACurrentMediaTime())
         let newState = result.state
         feasibilityState = newState
+        feasibilityReason = feasibilityReasonText(result)
         renderer.setFeasibilityState(newState)
     }
 
@@ -1167,8 +1169,23 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                 hapticManager?.setWarningMode(.strong)
             }
         }
+        feasibilityReason = feasibilityReasonText(result)
 
         previousJointAngles = ikResult.jointAngles
+    }
+
+    private func feasibilityReasonText(_ result: FeasibilityResult) -> String {
+        var reasons: [String] = []
+        if !result.ikConverged { reasons.append("IK未收敛") }
+        if !result.withinJointLimits { reasons.append("超出关节限位") }
+        if !result.withinVelocityLimits { reasons.append("超出速度限制") }
+        if result.selfCollision { reasons.append("自碰撞") }
+        if result.manipulability < 1e-5 {
+            reasons.append("处于奇异点")
+        } else if result.nearSingularity {
+            reasons.append("接近奇异点")
+        }
+        return reasons.joined(separator: " | ")
     }
 
     override func viewWillDisappear(_ animated: Bool) {
