@@ -142,9 +142,19 @@ class ArucoDetector {
             if let match = dictionary.match(bits: bits, maxHamming: maxHammingDist) {
                 lastMatchId = match.id
 
+                // Rotate corners to undo the dictionary rotation so that
+                // imagePoints[i] corresponds to objectPoints[i] in PnPSolver.
+                // match.rotation=N means detected bits = canonical rotated N×90°CW,
+                // so we cycle the corner array N steps to realign.
+                var corrected = ordered
+                let adjustedRotation = (match.rotation + 1) % 4
+                for _ in 0..<adjustedRotation {
+                    corrected = [corrected[1], corrected[2], corrected[3], corrected[0]]
+                }
+
                 // Map corners back to full resolution
                 let scale = Float(downsampleScale)
-                let fullCorners = ordered.map { SIMD2<Float>($0.x * scale, $0.y * scale) }
+                let fullCorners = corrected.map { SIMD2<Float>($0.x * scale, $0.y * scale) }
 
                 guard let cameraPose = pnpSolver.solve(
                     imagePoints: fullCorners,

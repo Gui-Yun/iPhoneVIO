@@ -76,9 +76,14 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
     private var baseTransformBeforePlacement: simd_float4x4?
 
     /// RM75 Home 姿态（度）: -100, -38, -156, 50, -15, 85, 90
-    private let homeJointAnglesDeg: [Float] = [-100, -38, -156, 50, -15, 85, 90]
+    private let homeJointAnglesDeg: [Float] = [-100, -38, -156, 50, -15, 85, 0]
     private var homeJointAngles: [Float] {
         homeJointAnglesDeg.map { $0 * .pi / 180 }
+    }
+
+    /// 放置确认后的初始姿态 — 直接使用 Home 姿态
+    private var placementInitJointAngles: [Float] {
+        homeJointAngles
     }
 
     // 遥操作锚点（engage 时快照）
@@ -368,17 +373,15 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                     if let result {
                         self.arucoDebugText += " hit:\(result.markerId)"
                         if result.markerId == self.targetArucoId {
-                            self.arucoMissCount = 0
-                            self.isArucoMarkerDetected = true
+                        self.arucoMissCount = 0
+                        self.isArucoMarkerDetected = true
                             self.updateArucoScreenOverlay(
                                 corners: result.corners,
                                 imageSize: imageSize,
                                 displayTransform: displayTransform
                             )
                             self.updateArucoBasePlacement(worldTransform: result.worldTransform)
-                        }
-                        // Ignore non-target IDs — don't clear state
-                    } else {
+                        } else {
                         self.arucoMissCount += 1
                         if self.arucoMissCount > self.arucoMissTolerance {
                             self.isArucoMarkerDetected = false
@@ -387,6 +390,7 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
                     }
                 }
             }
+        }
         }
 
         updatePlacementPreview(cameraTransform: transform)
@@ -803,8 +807,11 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
         baseTransformBeforePlacement = nil
         arucoMissCount = 0
 
+        // 使用放置后的默认姿态，而不是沿用上一次遥操作/零位姿态
+        previousJointAngles = placementInitJointAngles
+
         robotRenderer?.setBaseTransform(transform)
-        // 以当前关节角（零位）显示，不做 IK
+        // 以当前关节角（放置后初始姿态）显示，不做 IK
         if let solver = ikSolver, let renderer = robotRenderer {
             let fk = solver.forwardKinematics(previousJointAngles)
             renderer.updateTransforms(fk)
@@ -895,7 +902,8 @@ class ViewController: UIViewController, ARSessionDelegate, ObservableObject {
             return false
         }
 
-        let previewFK = solver.forwardKinematics(previousJointAngles)
+        // 预览阶段固定使用“放置后初始姿态”，确保确认前后姿态一致
+        let previewFK = solver.forwardKinematics(placementInitJointAngles)
         renderer.updateTransforms(previewFK)
         renderer.setFeasibility(true)
         renderer.show()
